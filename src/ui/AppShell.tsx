@@ -1007,6 +1007,7 @@ export function AppShell() {
         {state.editor.workspace === "atlas" ? (
           <aside className="panel side-panel atlas-side-panel">
             <AtlasAssetsPanel
+              project={state.project}
               sourceImages={state.project.sourceImages}
               selectedSourceImageId={selectedSourceImage?.id ?? null}
               atlasSprites={atlasSprites}
@@ -1302,6 +1303,7 @@ export function AppShell() {
 
       {state.editor.workspace === "tileset" && assetTrayOpen ? (
         <TilesetAssetPicker
+          project={state.project}
           sourceImages={state.project.sourceImages}
           selectedSourceImageId={selectedSourceImage?.id ?? null}
           slices={state.project.slices.filter((slice) => slice.sourceImageId === selectedSourceImage?.id)}
@@ -2409,6 +2411,7 @@ function RecentLevelAssetsSection({
 }
 
 function AtlasAssetsPanel(props: {
+  project: ProjectDocument;
   sourceImages: SourceImageAsset[];
   selectedSourceImageId: string | null;
   atlasSprites: Array<{ sprite: ProjectDocument["sprites"][number]; slice: SliceAsset | null }>;
@@ -2434,20 +2437,23 @@ function AtlasAssetsPanel(props: {
         <h2>Draw Order</h2>
         <span>Drag to reprioritize packing</span>
       </div>
-      <div className="asset-list">
-        {props.atlasSprites.map((entry, index) => (
-          <div
-            key={entry.sprite.id}
-            className="asset-card atlas-drag-card"
-            draggable
-            onDragStart={() => props.onDragStart(index)}
-            onDragOver={(event: DragEvent<HTMLDivElement>) => event.preventDefault()}
-            onDrop={() => props.onDrop(index)}
-          >
-            <strong>{entry.sprite.name}</strong>
-            <span>{entry.slice?.kind ?? "sprite"} · sprite {entry.sprite.id}</span>
-          </div>
-        ))}
+      <div className="dense-picker-container" style={{ flex: 1 }}>
+        <div className="dense-picker-grid">
+          {props.atlasSprites.map((entry, index) => (
+            <div
+              key={entry.sprite.id}
+              className="dense-tile-btn atlas-drag-card"
+              draggable
+              onDragStart={() => props.onDragStart(index)}
+              onDragOver={(event: DragEvent<HTMLDivElement>) => event.preventDefault()}
+              onDrop={() => props.onDrop(index)}
+              title={`${entry.sprite.name} (#${entry.sprite.id})`}
+            >
+              <SliceAssetPreview project={props.project} slice={entry.slice} />
+              <div className="dense-tile-label">{entry.sprite.name}</div>
+            </div>
+          ))}
+        </div>
       </div>
     </>
   );
@@ -2606,6 +2612,7 @@ function LevelNavigator(props: {
 }
 
 function TilesetAssetTray(props: {
+  project: ProjectDocument;
   sourceImages: SourceImageAsset[];
   selectedSourceImageId: string | null;
   slices: SliceAsset[];
@@ -2628,13 +2635,26 @@ function TilesetAssetTray(props: {
       </div>
       <div className="tray-column">
         <h3>Imported Slices</h3>
-        <div className="asset-list">
-          {props.slices.map((slice) => (
-            <button key={slice.id} className={props.selectedSliceIds.includes(slice.id) ? "asset-card active" : "asset-card"} onClick={() => props.onToggleSlice(slice.id)}>
-              <strong>{slice.name}</strong>
-              <span>{slice.kind}</span>
-            </button>
-          ))}
+        <div className="dense-picker-container" style={{ flex: 1 }}>
+          <div className="dense-picker-grid">
+            {props.slices.map((slice) => {
+              const match = slice.name.match(/_(\d+)_(\d+)(?:\.\w+)?$/);
+              const gridRow = match ? parseInt(match[1], 10) + 1 : undefined;
+              const gridColumn = match ? parseInt(match[2], 10) + 1 : undefined;
+              return (
+                <button 
+                  key={slice.id} 
+                  className={props.selectedSliceIds.includes(slice.id) ? "dense-tile-btn active" : "dense-tile-btn"} 
+                  onClick={() => props.onToggleSlice(slice.id)}
+                  title={`${slice.name} (${slice.kind})`}
+                  style={gridRow && gridColumn ? { gridRow, gridColumn } : undefined}
+                >
+                  <SliceAssetPreview project={props.project} slice={slice} />
+                  <div className="dense-tile-label">{slice.name}</div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
@@ -2642,6 +2662,7 @@ function TilesetAssetTray(props: {
 }
 
 function TilesetAssetPicker(props: {
+  project: ProjectDocument;
   sourceImages: SourceImageAsset[];
   selectedSourceImageId: string | null;
   slices: SliceAsset[];
@@ -2681,13 +2702,26 @@ function TilesetAssetPicker(props: {
             ))}
           </div>
         ) : (
-          <div className="picker-grid">
-            {filteredSlices.map((slice) => (
-              <button key={slice.id} className={props.selectedSliceIds.includes(slice.id) ? "tile-picker-card active" : "tile-picker-card"} onClick={() => props.onToggleSlice(slice.id)}>
-                <strong>{slice.name}</strong>
-                <span>{slice.kind}</span>
-              </button>
-            ))}
+          <div className="dense-picker-container" style={{ maxHeight: 500 }}>
+            <div className="dense-picker-grid">
+              {filteredSlices.map((slice) => {
+                const match = slice.name.match(/_(\d+)_(\d+)(?:\.\w+)?$/);
+                const gridRow = match ? parseInt(match[1], 10) + 1 : undefined;
+                const gridColumn = match ? parseInt(match[2], 10) + 1 : undefined;
+                return (
+                  <button 
+                    key={slice.id} 
+                    className={props.selectedSliceIds.includes(slice.id) ? "dense-tile-btn active" : "dense-tile-btn"} 
+                    onClick={() => props.onToggleSlice(slice.id)}
+                    title={`${slice.name} (${slice.kind})`}
+                    style={gridRow && gridColumn ? { gridRow, gridColumn } : undefined}
+                  >
+                    <SliceAssetPreview project={props.project} slice={slice} />
+                    <div className="dense-tile-label">{slice.name}</div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
       </section>
@@ -2898,17 +2932,23 @@ function LevelAssetPicker(props: {
               <div className={editingBrush ? "dense-picker-container" : "picker-grid picker-grid-terrain"}>
                 {editingBrush ? (
                   <div className="dense-picker-grid">
-                    {tiles.map((tile) => (
-                      <button
-                        key={tile.tileId}
-                        className={tile.tileId === props.selectedPaintTileId ? "dense-tile-btn active" : "dense-tile-btn"}
-                        onClick={() => props.onSetPaintTile(tile.tileId)}
-                        title={`${tile.name} (#${tile.tileId})`}
-                      >
-                        <TileAssetPreview project={props.project} tile={tile} />
-                        <div className="dense-tile-label">{tile.name}</div>
-                      </button>
-                    ))}
+                    {tiles.map((tile) => {
+                      const match = tile.name.match(/_(\d+)_(\d+)(?:\.\w+)?$/);
+                      const gridRow = match ? parseInt(match[1], 10) + 1 : undefined;
+                      const gridColumn = match ? parseInt(match[2], 10) + 1 : undefined;
+                      return (
+                        <button
+                          key={tile.tileId}
+                          className={tile.tileId === props.selectedPaintTileId ? "dense-tile-btn active" : "dense-tile-btn"}
+                          onClick={() => props.onSetPaintTile(tile.tileId)}
+                          title={`${tile.name} (#${tile.tileId})`}
+                          style={gridRow && gridColumn ? { gridRow, gridColumn } : undefined}
+                        >
+                          <TileAssetPreview project={props.project} tile={tile} />
+                          <div className="dense-tile-label">{tile.name}</div>
+                        </button>
+                      );
+                    })}
                   </div>
                 ) : (
                   filteredTerrainSets.map((terrainSet) => {
@@ -2965,7 +3005,12 @@ function LevelAssetPicker(props: {
                         const tileId = selectedTerrainSet.slots[mask];
                         const tile = tileId ? props.project.tiles.find((t) => t.tileId === tileId) ?? null : null;
                         const n = mask & 1; const s = mask & 2; const w = mask & 4; const e = mask & 8;
-                        const label = (n ? "N" : "") + (s ? "S" : "") + (w ? "W" : "") + (e ? "E" : "") || "•";
+                        const label = {
+                          10: "Top Left", 14: "Top", 6: "Top Right", 0: "Isolated",
+                          11: "Left", 15: "Center", 7: "Right", 2: "Top End",
+                          9: "Bot Left", 13: "Bottom", 5: "Bot Right", 1: "Bot End",
+                          8: "Left End", 4: "Right End", 3: "Column", 12: "Row"
+                        }[mask] ?? (n || s || w || e ? (n ? "N" : "") + (s ? "S" : "") + (w ? "W" : "") + (e ? "E" : "") : "•");
                         return (
                           <button
                             key={mask}
@@ -3004,8 +3049,23 @@ function TileAssetPreview({
     return <div className="tile-preview empty" />;
   }
   const slice = project.slices.find((entry) => entry.id === tile.sliceId) ?? null;
-  const source = slice ? project.sourceImages.find((entry) => entry.id === slice.sourceImageId) ?? null : null;
-  if (!slice || !source) {
+  return <SliceAssetPreview project={project} slice={slice} scale={forcedScale} />;
+}
+
+function SliceAssetPreview({
+  project,
+  slice,
+  scale: forcedScale,
+}: {
+  project: ProjectDocument;
+  slice: SliceAsset | null;
+  scale?: number;
+}) {
+  if (!slice) {
+    return <div className="tile-preview empty" />;
+  }
+  const source = project.sourceImages.find((entry) => entry.id === slice.sourceImageId) ?? null;
+  if (!source) {
     return <div className="tile-preview empty" />;
   }
   const scale = forcedScale ?? Math.max(
