@@ -13,7 +13,7 @@ const VERSION_MAJOR = 1;
 const VERSION_MINOR = 0;
 
 const HEADER_SIZE = 44;
-const PAGE_SIZE = 32;
+const PAGE_SIZE = 30;
 const SPRITE_SIZE = 40;
 const HASH_SIZE = 8;
 const POT_CANDIDATES = [64, 128, 256, 512, 1024] as const;
@@ -692,23 +692,14 @@ function buildMetadata(
     : [];
 
   const payloadCrc32 = crc32(atlasBin);
-  const pageTableOffset = align(HEADER_SIZE, 16);
-  const spriteTableOffset = align(
-    pageTableOffset + pages.length * PAGE_SIZE,
-    16,
-  );
-  const animTableOffset = align(
-    spriteTableOffset + sortedPlacements.length * SPRITE_SIZE,
-    16,
-  );
+  const pageTableOffset = HEADER_SIZE;
+  const spriteTableOffset = pageTableOffset + pages.length * PAGE_SIZE;
+  const animTableOffset = spriteTableOffset + sortedPlacements.length * SPRITE_SIZE;
   const frameTableOffset = animTableOffset;
-  const hashTableOffset =
-    hashEntries.length > 0 ? align(frameTableOffset, 16) : 0;
-  const fileSize = align(
+  const hashTableOffset = hashEntries.length > 0 ? frameTableOffset : 0;
+  const fileSize =
     (hashEntries.length > 0 ? hashTableOffset : frameTableOffset) +
-      hashEntries.length * HASH_SIZE,
-    4,
-  );
+    hashEntries.length * HASH_SIZE;
   const meta = new Uint8Array(fileSize);
   const view = new DataView(meta.buffer);
 
@@ -726,7 +717,6 @@ function buildMetadata(
     view.setUint16(offset + 18, 0, true);
     view.setUint32(offset + 20, 0, true);
     view.setUint32(offset + 24, 0, true);
-    view.setUint32(offset + 28, 0, true);
     atlasDataOffset += page.data.length;
   });
 

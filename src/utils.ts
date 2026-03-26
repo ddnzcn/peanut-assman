@@ -29,6 +29,10 @@ export function align(value: number, alignment: number): number {
   return remainder === 0 ? value : value + alignment - remainder;
 }
 
+export function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 export function crc32(data: Uint8Array): number {
   let crc = 0xffffffff;
   for (let i = 0; i < data.length; i += 1) {
@@ -65,4 +69,29 @@ export function formatBytes(value: number): string {
     return `${(value / 1024).toFixed(1)} KB`;
   }
   return `${(value / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+export function fileNameBase(fileName: string): string {
+  const dotIndex = fileName.lastIndexOf(".");
+  return dotIndex >= 0 ? fileName.slice(0, dotIndex) : fileName;
+}
+
+export function encodeBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+  return btoa(binary);
+}
+
+export function chunkKey(layerId: string, chunkX: number, chunkY: number): string {
+  return `${layerId}:${chunkX}:${chunkY}`;
+}
+
+export function mod(value: number, divisor: number): number {
+  return ((value % divisor) + divisor) % divisor;
+}
+
+export function packFixed88(value: number): number {
+  return Math.round(value * 256);
 }
