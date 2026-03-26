@@ -2790,8 +2790,8 @@ function LevelAssetTray(props: {
           <div className="dense-picker-grid">
             {tiles.map((tile) => {
               const match = tile.name.match(/_(\d+)_(\d+)(?:\.\w+)?$/);
-              const gridColumn = match ? parseInt(match[1], 10) + 1 : undefined;
-              const gridRow = match ? parseInt(match[2], 10) + 1 : undefined;
+              const gridRow = match ? parseInt(match[1], 10) + 1 : undefined;
+              const gridColumn = match ? parseInt(match[2], 10) + 1 : undefined;
               return (
                 <button 
                   key={tile.tileId} 
@@ -2801,6 +2801,7 @@ function LevelAssetTray(props: {
                   style={gridRow && gridColumn ? { gridRow, gridColumn } : undefined}
                 >
                   <TileAssetPreview project={props.project} tile={tile} />
+                  <div className="dense-tile-label">{tile.name}</div>
                 </button>
               );
             })}
@@ -2913,8 +2914,8 @@ function LevelAssetPicker(props: {
               <div className="dense-picker-grid">
                 {tiles.map((tile) => {
                   const match = tile.name.match(/_(\d+)_(\d+)(?:\.\w+)?$/);
-                  const gridColumn = match ? parseInt(match[1], 10) + 1 : undefined;
-                  const gridRow = match ? parseInt(match[2], 10) + 1 : undefined;
+                  const gridRow = match ? parseInt(match[1], 10) + 1 : undefined;
+                  const gridColumn = match ? parseInt(match[2], 10) + 1 : undefined;
                   return (
                     <button
                       key={tile.tileId}
@@ -2924,6 +2925,7 @@ function LevelAssetPicker(props: {
                       style={gridRow && gridColumn ? { gridRow, gridColumn } : undefined}
                     >
                       <TileAssetPreview project={props.project} tile={tile} />
+                      <div className="dense-tile-label">{tile.name}</div>
                     </button>
                   );
                 })}
@@ -2981,8 +2983,8 @@ function LevelAssetPicker(props: {
                     <div className="dense-picker-grid">
                       {tiles.map((tile) => {
                         const match = tile.name.match(/_(\d+)_(\d+)(?:\.\w+)?$/);
-                        const gridColumn = match ? parseInt(match[1], 10) + 1 : undefined;
-                        const gridRow = match ? parseInt(match[2], 10) + 1 : undefined;
+                        const gridRow = match ? parseInt(match[1], 10) + 1 : undefined;
+                        const gridColumn = match ? parseInt(match[2], 10) + 1 : undefined;
                         return (
                           <button
                             key={tile.tileId}
@@ -2992,6 +2994,7 @@ function LevelAssetPicker(props: {
                             style={gridRow && gridColumn ? { gridRow, gridColumn } : undefined}
                           >
                             <TileAssetPreview project={props.project} tile={tile} />
+                            <div className="dense-tile-label">{tile.name}</div>
                           </button>
                         );
                       })}
