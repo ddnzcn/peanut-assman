@@ -66,6 +66,36 @@ const DEFAULT_MANUAL_RECT: ManualSliceRect = {
 
 type SlicerCanvasTool = "draw" | "move";
 
+export const TILESETTER_MASKS: Record<string, number> = {
+  // Outer 3x3
+  "00_00": 208, "00_01": 248, "00_02": 104,
+  "01_00": 214, "01_01": 255, "01_02": 107,
+  "02_00": 22,  "02_01": 31,  "02_02": 11,
+
+  // Vertical 1x3
+  "00_03": 64,  "01_03": 66,  "02_03": 2,
+  
+  // Horizontal 3x1
+  "03_00": 16,  "03_01": 24,  "03_02": 8,
+  
+  // Single
+  "03_03": 0,
+
+  // Inner 3x3 with holes
+  "00_04": 127, "00_05": 95,  "00_06": 223,
+  "01_04": 123, "01_05": 90,  "01_06": 222,
+  "02_04": 251, "02_05": 250, "02_06": 254,
+
+  // Mixed/Caps right side blob
+  "00_07": 80,  "00_08": 216, "00_09": 120,
+  "01_07": 210, "01_08": 18,  "01_09": 10,
+  "02_07": 86,  "02_08": 106, "02_09": 75,
+  "03_04": 27,  "03_05": 30,  "03_06": 26,
+  "03_07": 88,  "03_08": 74,  "03_09": 82,
+  "04_00": 122, "04_01": 91,  "04_02": 94,  "04_03": 218,
+  "04_04": 126, "04_05": 219, "04_06": 72,
+};
+
 export function AppShell() {
   const { state, dispatch } = useProjectStore();
   const level = getSelectedLevel(state);
@@ -582,6 +612,26 @@ export function AppShell() {
     const south = isTerrainAt(tileX, tileY + 1);
     const west = isTerrainAt(tileX - 1, tileY);
     const east = isTerrainAt(tileX + 1, tileY);
+    const northWest = isTerrainAt(tileX - 1, tileY - 1);
+    const northEast = isTerrainAt(tileX + 1, tileY - 1);
+    const southWest = isTerrainAt(tileX - 1, tileY + 1);
+    const southEast = isTerrainAt(tileX + 1, tileY + 1);
+
+    let mask = 0;
+    if (north) mask |= 2;
+    if (south) mask |= 64;
+    if (west) mask |= 8;
+    if (east) mask |= 16;
+    if (north && west && northWest) mask |= 1;
+    if (north && east && northEast) mask |= 4;
+    if (south && west && southWest) mask |= 32;
+    if (south && east && southEast) mask |= 128;
+
+    if (terrainSet.blobMap && terrainSet.blobMap[mask] !== undefined) {
+      return terrainSet.blobMap[mask];
+    }
+    
+    // Legacy 13-slot fallback
     if (!north && !west && terrainSet.slots.topLeft) return terrainSet.slots.topLeft;
     if (!north && !east && terrainSet.slots.topRight) return terrainSet.slots.topRight;
     if (!south && !west && terrainSet.slots.bottomLeft) return terrainSet.slots.bottomLeft;
@@ -590,6 +640,12 @@ export function AppShell() {
     if (!south && terrainSet.slots.bottom) return terrainSet.slots.bottom;
     if (!west && terrainSet.slots.left) return terrainSet.slots.left;
     if (!east && terrainSet.slots.right) return terrainSet.slots.right;
+
+    if (north && west && !northWest && terrainSet.slots.innerTopLeft) return terrainSet.slots.innerTopLeft;
+    if (north && east && !northEast && terrainSet.slots.innerTopRight) return terrainSet.slots.innerTopRight;
+    if (south && west && !southWest && terrainSet.slots.innerBottomLeft) return terrainSet.slots.innerBottomLeft;
+    if (south && east && !southEast && terrainSet.slots.innerBottomRight) return terrainSet.slots.innerBottomRight;
+
     return terrainSet.slots.center;
   }
 
@@ -1369,7 +1425,12 @@ export function AppShell() {
                   topRight: 0,
                   bottomLeft: 0,
                   bottomRight: 0,
+                  innerTopLeft: 0,
+                  innerTopRight: 0,
+                  innerBottomLeft: 0,
+                  innerBottomRight: 0,
                 },
+                blobMap: {},
               },
             });
           }}
@@ -1387,6 +1448,9 @@ export function AppShell() {
                 },
               },
             });
+          }}
+          onUpdateTerrainSet={(terrainSet) => {
+            dispatch({ type: "upsertTerrainSet", terrainSet });
           }}
         />
       ) : null}
@@ -2722,13 +2786,25 @@ function LevelAssetTray(props: {
       </div>
       <div className="tray-column">
         <h3>Tile Palette</h3>
-        <div className="tile-palette">
-          {tiles.map((tile) => (
-            <button key={tile.tileId} className={tile.tileId === props.selectedPaintTileId ? "tile-chip active" : "tile-chip"} onClick={() => props.onSelectTile(tile.tileId)}>
-              <strong>{tile.name}</strong>
-              <span>#{tile.tileId}</span>
-            </button>
-          ))}
+        <div className="dense-picker-container" style={{ flex: 1 }}>
+          <div className="dense-picker-grid">
+            {tiles.map((tile) => {
+              const match = tile.name.match(/_(\d+)_(\d+)(?:\.\w+)?$/);
+              const gridColumn = match ? parseInt(match[1], 10) + 1 : undefined;
+              const gridRow = match ? parseInt(match[2], 10) + 1 : undefined;
+              return (
+                <button 
+                  key={tile.tileId} 
+                  className={tile.tileId === props.selectedPaintTileId ? "dense-tile-btn active" : "dense-tile-btn"} 
+                  onClick={() => props.onSelectTile(tile.tileId)}
+                  title={`${tile.name} (#${tile.tileId})`}
+                  style={gridRow && gridColumn ? { gridRow, gridColumn } : undefined}
+                >
+                  <TileAssetPreview project={props.project} tile={tile} />
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
@@ -2754,6 +2830,7 @@ function LevelAssetPicker(props: {
   onRemoveTerrainSet: (terrainSetId: number) => void;
   onCreateTerrainSet: () => void;
   onAssignTerrainSlot: (slot: keyof TerrainSet["slots"]) => void;
+  onUpdateTerrainSet: (terrainSet: TerrainSet) => void;
 }) {
   const [editingBrush, setEditingBrush] = useState(false);
   const search = props.search.trim().toLowerCase();
@@ -2779,9 +2856,13 @@ function LevelAssetPicker(props: {
     { key: "left", label: "Left" },
     { key: "center", label: "Center" },
     { key: "right", label: "Right" },
-    { key: "bottomLeft", label: "Bottom Left" },
-    { key: "bottom", label: "Bottom" },
-    { key: "bottomRight", label: "Bottom Right" },
+    {key: "bottomLeft", label: "Bottom Left"},
+    {key: "bottom", label: "Bottom"},
+    {key: "bottomRight", label: "Bottom Right"},
+    {key: "innerTopLeft", label: "Inner TL"},
+    {key: "innerTopRight", label: "Inner TR"},
+    {key: "innerBottomLeft", label: "Inner BL"},
+    {key: "innerBottomRight", label: "Inner BR"},
   ];
 
   return (
@@ -2828,18 +2909,25 @@ function LevelAssetPicker(props: {
               <strong>{selectedTileset?.name ?? "No tileset selected"}</strong>
               <span>{tiles.length} tiles</span>
             </div>
-            <div className="picker-grid">
-              {tiles.map((tile) => (
-                <button
-                  key={tile.tileId}
-                  className={tile.tileId === props.selectedPaintTileId ? "tile-picker-card active" : "tile-picker-card"}
-                  onClick={() => props.onSelectTile(tile.tileId)}
-                >
-                  <TileAssetPreview project={props.project} tile={tile} />
-                  <strong>{tile.name}</strong>
-                  <span>#{tile.tileId}</span>
-                </button>
-              ))}
+            <div className="dense-picker-container">
+              <div className="dense-picker-grid">
+                {tiles.map((tile) => {
+                  const match = tile.name.match(/_(\d+)_(\d+)(?:\.\w+)?$/);
+                  const gridColumn = match ? parseInt(match[1], 10) + 1 : undefined;
+                  const gridRow = match ? parseInt(match[2], 10) + 1 : undefined;
+                  return (
+                    <button
+                      key={tile.tileId}
+                      className={tile.tileId === props.selectedPaintTileId ? "dense-tile-btn active" : "dense-tile-btn"}
+                      onClick={() => props.onSelectTile(tile.tileId)}
+                      title={`${tile.name} (#${tile.tileId})`}
+                      style={gridRow && gridColumn ? { gridRow, gridColumn } : undefined}
+                    >
+                      <TileAssetPreview project={props.project} tile={tile} />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </>
         ) : (
@@ -2850,6 +2938,35 @@ function LevelAssetPicker(props: {
                   <>
                     <button className="ghost" onClick={() => setEditingBrush(false)}>← Back</button>
                     <strong>Brush Tiles</strong>
+                    <button 
+                      className="secondary" 
+                      onClick={() => {
+                        if (!selectedTileset || !selectedTerrainSet) return;
+                        const newBlobMap: Record<number, number> = {};
+                        for (const tileId of selectedTileset.tileIds) {
+                          const tile = props.project.tiles.find((t) => t.tileId === tileId);
+                          if (tile) {
+                            const match = tile.name.match(/_(\d+)_(\d+)(?:\.\w+)?$/);
+                            if (match) {
+                              const col = parseInt(match[1], 10);
+                              const row = parseInt(match[2], 10);
+                              const key = `${row < 10 ? '0' : ''}${row}_${col < 10 ? '0' : ''}${col}`;
+                              if (TILESETTER_MASKS[key] !== undefined) {
+                                newBlobMap[TILESETTER_MASKS[key]] = tile.tileId;
+                              }
+                            }
+                          }
+                        }
+                        props.onUpdateTerrainSet({
+                          ...selectedTerrainSet,
+                          blobMap: newBlobMap,
+                        });
+                        setEditingBrush(false);
+                      }}
+                      title="Automatically map all 47 tiles from the current tileset using their Grid Coordinates"
+                    >
+                      Auto-Map Blob
+                    </button>
                   </>
                 ) : (
                   <>
@@ -2858,19 +2975,28 @@ function LevelAssetPicker(props: {
                   </>
                 )}
               </div>
-              <div className={editingBrush ? "picker-grid" : "picker-grid picker-grid-terrain"}>
+              <div className={editingBrush ? "dense-picker-container" : "picker-grid picker-grid-terrain"}>
                 {editingBrush ? (
-                  tiles.map((tile) => (
-                    <button
-                      key={tile.tileId}
-                      className={tile.tileId === props.selectedPaintTileId ? "tile-picker-card active" : "tile-picker-card"}
-                      onClick={() => props.onSetPaintTile(tile.tileId)}
-                    >
-                      <TileAssetPreview project={props.project} tile={tile} />
-                      <strong>{tile.name}</strong>
-                      <span>#{tile.tileId}</span>
-                    </button>
-                  ))
+                  <div className="dense-picker-container">
+                    <div className="dense-picker-grid">
+                      {tiles.map((tile) => {
+                        const match = tile.name.match(/_(\d+)_(\d+)(?:\.\w+)?$/);
+                        const gridColumn = match ? parseInt(match[1], 10) + 1 : undefined;
+                        const gridRow = match ? parseInt(match[2], 10) + 1 : undefined;
+                        return (
+                          <button
+                            key={tile.tileId}
+                            className={tile.tileId === props.selectedPaintTileId ? "dense-tile-btn active" : "dense-tile-btn"}
+                            onClick={() => props.onSetPaintTile(tile.tileId)}
+                            title={`${tile.name} (#${tile.tileId})`}
+                            style={gridRow && gridColumn ? { gridRow, gridColumn } : undefined}
+                          >
+                            <TileAssetPreview project={props.project} tile={tile} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 ) : (
                   filteredTerrainSets.map((terrainSet) => {
                     const centerTile = terrainSet.slots.center

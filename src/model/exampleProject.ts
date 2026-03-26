@@ -264,6 +264,10 @@ function createExampleTerrainSet(tilesetId: number, tiles: TilesetTileAsset[]) {
       topRight: tiles[3]?.tileId ?? 0,
       bottomLeft: tiles[3]?.tileId ?? 0,
       bottomRight: tiles[3]?.tileId ?? 0,
+      innerTopLeft: tiles[3]?.tileId ?? 0,
+      innerTopRight: tiles[3]?.tileId ?? 0,
+      innerBottomLeft: tiles[3]?.tileId ?? 0,
+      innerBottomRight: tiles[3]?.tileId ?? 0,
     },
   };
 }

@@ -97,6 +97,10 @@ export interface TerrainSetSlots {
   topRight: number;
   bottomLeft: number;
   bottomRight: number;
+  innerTopLeft: number;
+  innerTopRight: number;
+  innerBottomLeft: number;
+  innerBottomRight: number;
 }
 
 export interface TerrainSet {
@@ -104,6 +108,7 @@ export interface TerrainSet {
   name: string;
   tilesetId: number;
   slots: TerrainSetSlots;
+  blobMap?: Record<number, number>;
 }
 
 export interface TileCell {
