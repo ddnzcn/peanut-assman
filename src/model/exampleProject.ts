@@ -250,25 +250,15 @@ function createExampleLevel(tilesetId: number): LevelDocument {
 }
 
 function createExampleTerrainSet(tilesetId: number, tiles: TilesetTileAsset[]) {
+  const slots: Record<number, number> = {};
+  for (let i = 0; i < 16; i++) {
+    slots[i] = tiles[0]?.tileId ?? 0;
+  }
   return {
     id: 1,
     name: "terrain_basic",
     tilesetId,
-    slots: {
-      center: tiles[0]?.tileId ?? 0,
-      top: tiles[1]?.tileId ?? 0,
-      bottom: tiles[1]?.tileId ?? 0,
-      left: tiles[2]?.tileId ?? 0,
-      right: tiles[2]?.tileId ?? 0,
-      topLeft: tiles[3]?.tileId ?? 0,
-      topRight: tiles[3]?.tileId ?? 0,
-      bottomLeft: tiles[3]?.tileId ?? 0,
-      bottomRight: tiles[3]?.tileId ?? 0,
-      innerTopLeft: tiles[3]?.tileId ?? 0,
-      innerTopRight: tiles[3]?.tileId ?? 0,
-      innerBottomLeft: tiles[3]?.tileId ?? 0,
-      innerBottomRight: tiles[3]?.tileId ?? 0,
-    },
+    slots,
   };
 }
 

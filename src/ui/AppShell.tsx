@@ -66,34 +66,12 @@ const DEFAULT_MANUAL_RECT: ManualSliceRect = {
 
 type SlicerCanvasTool = "draw" | "move";
 
-export const TILESETTER_MASKS: Record<string, number> = {
-  // Outer 3x3
-  "00_00": 208, "00_01": 248, "00_02": 104,
-  "01_00": 214, "01_01": 255, "01_02": 107,
-  "02_00": 22,  "02_01": 31,  "02_02": 11,
-
-  // Vertical 1x3
-  "00_03": 64,  "01_03": 66,  "02_03": 2,
-  
-  // Horizontal 3x1
-  "03_00": 16,  "03_01": 24,  "03_02": 8,
-  
-  // Single
-  "03_03": 0,
-
-  // Inner 3x3 with holes
-  "00_04": 127, "00_05": 95,  "00_06": 223,
-  "01_04": 123, "01_05": 90,  "01_06": 222,
-  "02_04": 251, "02_05": 250, "02_06": 254,
-
-  // Mixed/Caps right side blob
-  "00_07": 80,  "00_08": 216, "00_09": 120,
-  "01_07": 210, "01_08": 18,  "01_09": 10,
-  "02_07": 86,  "02_08": 106, "02_09": 75,
-  "03_04": 27,  "03_05": 30,  "03_06": 26,
-  "03_07": 88,  "03_08": 74,  "03_09": 82,
-  "04_00": 122, "04_01": 91,  "04_02": 94,  "04_03": 218,
-  "04_04": 126, "04_05": 219, "04_06": 72,
+export const CARDINAL_MASKS: Record<string, number> = {
+  // 4x4 Grid (Row_Col) mapping to bitmasks 0-15
+  "00_00": 0,  "00_01": 1,  "00_02": 2,  "00_03": 3,
+  "01_00": 4,  "01_01": 5,  "01_02": 6,  "01_03": 7,
+  "02_00": 8,  "02_01": 9,  "02_02": 10, "02_03": 11,
+  "03_00": 12, "03_01": 13, "03_02": 14, "03_03": 15,
 };
 
 export function AppShell() {
@@ -125,6 +103,8 @@ export function AppShell() {
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [atlasModule, setAtlasModule] = useState<"pack" | "slicer">("pack");
 
+
+
   const [tilesetGridOptions, setTilesetGridOptions] = useState<GridSliceOptions>(DEFAULT_TILESET_GRID);
   const [atlasGridOptions, setAtlasGridOptions] = useState<GridSliceOptions>(DEFAULT_ATLAS_GRID);
   const [tilesetManualRects, setTilesetManualRects] = useState<ManualSliceRect[]>([]);
@@ -135,6 +115,24 @@ export function AppShell() {
   const [atlasManualDraft, setAtlasManualDraft] = useState<ManualSliceRect>(DEFAULT_MANUAL_RECT);
   const [tilesetSelectedManualRectIndex, setTilesetSelectedManualRectIndex] = useState<number | null>(null);
   const [atlasSelectedManualRectIndex, setAtlasSelectedManualRectIndex] = useState<number | null>(null);
+
+  function updateManualRect(target: "tileset" | "atlas", index: number, patch: Partial<ManualSliceRect>) {
+    if (target === "tileset") {
+      setTilesetManualRects((current) =>
+        current.map((rect, rectIndex) => (rectIndex === index ? { ...rect, ...patch } : rect)),
+      );
+      if (tilesetSelectedManualRectIndex === index) {
+        setTilesetManualDraft((current) => ({ ...current, ...patch }));
+      }
+      return;
+    }
+    setAtlasManualRects((current) =>
+      current.map((rect, rectIndex) => (rectIndex === index ? { ...rect, ...patch } : rect)),
+    );
+    if (atlasSelectedManualRectIndex === index) {
+      setAtlasManualDraft((current) => ({ ...current, ...patch }));
+    }
+  }
   const [slicerCanvasTool, setSlicerCanvasTool] = useState<SlicerCanvasTool>("draw");
   const [dragRect, setDragRect] = useState<SliceRect | null>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
@@ -600,6 +598,7 @@ export function AppShell() {
     downloadBlob(new Blob([exportLevelDebugJson(state.project, level)], { type: "application/json" }), `${level.name}.debug.json`);
   }
 
+
   function resolveTerrainTileId(levelDocument: LevelDocument, levelLayer: LevelLayer, tileX: number, tileY: number, terrainSet: TerrainSet) {
     const isTerrainAt = (x: number, y: number) => {
       if (x < 0 || y < 0 || x >= levelLayer.widthTiles || y >= levelLayer.heightTiles) {
@@ -608,49 +607,19 @@ export function AppShell() {
       const tileId = getTileAt(levelDocument, levelLayer, x, y).tileId;
       return terrainTileToSetId.get(tileId) === terrainSet.id;
     };
-    const north = isTerrainAt(tileX, tileY - 1);
-    const south = isTerrainAt(tileX, tileY + 1);
-    const west = isTerrainAt(tileX - 1, tileY);
-    const east = isTerrainAt(tileX + 1, tileY);
-    const northWest = isTerrainAt(tileX - 1, tileY - 1);
-    const northEast = isTerrainAt(tileX + 1, tileY - 1);
-    const southWest = isTerrainAt(tileX - 1, tileY + 1);
-    const southEast = isTerrainAt(tileX + 1, tileY + 1);
 
+    // 4-Bit Cardinal Bitmask (N:1, S:2, W:4, E:8)
     let mask = 0;
-    if (north) mask |= 2;
-    if (south) mask |= 64;
-    if (west) mask |= 8;
-    if (east) mask |= 16;
-    if (north && west && northWest) mask |= 1;
-    if (north && east && northEast) mask |= 4;
-    if (south && west && southWest) mask |= 32;
-    if (south && east && southEast) mask |= 128;
+    if (isTerrainAt(tileX, tileY - 1)) mask |= 1;
+    if (isTerrainAt(tileX, tileY + 1)) mask |= 2;
+    if (isTerrainAt(tileX - 1, tileY)) mask |= 4;
+    if (isTerrainAt(tileX + 1, tileY)) mask |= 8;
 
-    if (terrainSet.blobMap && terrainSet.blobMap[mask] !== undefined) {
-      return terrainSet.blobMap[mask];
-    }
-    
-    // Legacy 13-slot fallback
-    if (!north && !west && terrainSet.slots.topLeft) return terrainSet.slots.topLeft;
-    if (!north && !east && terrainSet.slots.topRight) return terrainSet.slots.topRight;
-    if (!south && !west && terrainSet.slots.bottomLeft) return terrainSet.slots.bottomLeft;
-    if (!south && !east && terrainSet.slots.bottomRight) return terrainSet.slots.bottomRight;
-    if (!north && terrainSet.slots.top) return terrainSet.slots.top;
-    if (!south && terrainSet.slots.bottom) return terrainSet.slots.bottom;
-    if (!west && terrainSet.slots.left) return terrainSet.slots.left;
-    if (!east && terrainSet.slots.right) return terrainSet.slots.right;
-
-    if (north && west && !northWest && terrainSet.slots.innerTopLeft) return terrainSet.slots.innerTopLeft;
-    if (north && east && !northEast && terrainSet.slots.innerTopRight) return terrainSet.slots.innerTopRight;
-    if (south && west && !southWest && terrainSet.slots.innerBottomLeft) return terrainSet.slots.innerBottomLeft;
-    if (south && east && !southEast && terrainSet.slots.innerBottomRight) return terrainSet.slots.innerBottomRight;
-
-    return terrainSet.slots.center;
+    return terrainSet.slots[mask] || terrainSet.slots[0] || 0;
   }
 
   function applyTerrainBrush(levelDocument: LevelDocument, levelLayer: LevelLayer, tileX: number, tileY: number, terrainSet: TerrainSet) {
-    let next = paintTile(levelDocument, levelLayer, tileX, tileY, terrainSet.slots.center);
+    let next = paintTile(levelDocument, levelLayer, tileX, tileY, terrainSet.slots[0] || 0);
     for (let sampleY = tileY - 1; sampleY <= tileY + 1; sampleY += 1) {
       for (let sampleX = tileX - 1; sampleX <= tileX + 1; sampleX += 1) {
         if (sampleX < 0 || sampleY < 0 || sampleX >= levelLayer.widthTiles || sampleY >= levelLayer.heightTiles) {
@@ -869,23 +838,7 @@ export function AppShell() {
     }
   }
 
-  function updateManualRect(target: "tileset" | "atlas", index: number, patch: Partial<ManualSliceRect>) {
-    if (target === "tileset") {
-      setTilesetManualRects((current) =>
-        current.map((rect, rectIndex) => (rectIndex === index ? { ...rect, ...patch } : rect)),
-      );
-      if (tilesetSelectedManualRectIndex === index) {
-        setTilesetManualDraft((current) => ({ ...current, ...patch }));
-      }
-      return;
-    }
-    setAtlasManualRects((current) =>
-      current.map((rect, rectIndex) => (rectIndex === index ? { ...rect, ...patch } : rect)),
-    );
-    if (atlasSelectedManualRectIndex === index) {
-      setAtlasManualDraft((current) => ({ ...current, ...patch }));
-    }
-  }
+
 
   function removeManualRect(target: "tileset" | "atlas", index: number) {
     if (target === "tileset") {
@@ -1415,21 +1368,7 @@ export function AppShell() {
                 id: state.project.idCounters.terrainSet,
                 name: `${selectedTileset.name}_terrain`,
                 tilesetId: selectedTileset.id,
-                slots: {
-                  center: selectedPaintTileId || selectedTileset.tileIds[0] || 0,
-                  top: 0,
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  topLeft: 0,
-                  topRight: 0,
-                  bottomLeft: 0,
-                  bottomRight: 0,
-                  innerTopLeft: 0,
-                  innerTopRight: 0,
-                  innerBottomLeft: 0,
-                  innerBottomRight: 0,
-                },
+                slots: { 0: selectedPaintTileId || selectedTileset.tileIds[0] || 0 },
                 blobMap: {},
               },
             });
@@ -2454,9 +2393,7 @@ function RecentLevelAssetsSection({
           </div>
           <div className="recent-chip-list recent-chip-list-terrain">
             {recentTerrainSets.map((terrainSet) => {
-              const centerTile = terrainSet.slots.center
-                ? project.tiles.find((tile) => tile.tileId === terrainSet.slots.center) ?? null
-                : null;
+              const centerTile = project.tiles.find((tile) => tile.tileId === (terrainSet.slots[0] || 0)) ?? null;
               return (
                 <button key={terrainSet.id} className="recent-chip" onClick={() => onSelectRecentTerrainSet(terrainSet.id)}>
                   <TileAssetPreview project={project} tile={centerTile} />
@@ -2850,21 +2787,7 @@ function LevelAssetPicker(props: {
     : [];
   const filteredTerrainSets = props.terrainSets.filter((terrainSet) => !search || terrainSet.name.toLowerCase().includes(search));
   const currentTile = props.project.tiles.find((tile) => tile.tileId === props.selectedPaintTileId) ?? null;
-  const slotOrder: Array<{ key: keyof TerrainSet["slots"]; label: string }> = [
-    { key: "topLeft", label: "Top Left" },
-    { key: "top", label: "Top" },
-    { key: "topRight", label: "Top Right" },
-    { key: "left", label: "Left" },
-    { key: "center", label: "Center" },
-    { key: "right", label: "Right" },
-    {key: "bottomLeft", label: "Bottom Left"},
-    {key: "bottom", label: "Bottom"},
-    {key: "bottomRight", label: "Bottom Right"},
-    {key: "innerTopLeft", label: "Inner TL"},
-    {key: "innerTopRight", label: "Inner TR"},
-    {key: "innerBottomLeft", label: "Inner BL"},
-    {key: "innerBottomRight", label: "Inner BR"},
-  ];
+
 
   return (
     <div className="picker-overlay" onClick={props.onClose}>
@@ -2940,34 +2863,29 @@ function LevelAssetPicker(props: {
                   <>
                     <button className="ghost" onClick={() => setEditingBrush(false)}>← Back</button>
                     <strong>Brush Tiles</strong>
-                    <button 
-                      className="secondary" 
+                    <button
+                      className="primary"
                       onClick={() => {
-                        if (!selectedTileset || !selectedTerrainSet) return;
-                        const newBlobMap: Record<number, number> = {};
-                        for (const tileId of selectedTileset.tileIds) {
-                          const tile = props.project.tiles.find((t) => t.tileId === tileId);
-                          if (tile) {
-                            const match = tile.name.match(/_(\d+)_(\d+)(?:\.\w+)?$/);
-                            if (match) {
-                              const col = parseInt(match[1], 10);
-                              const row = parseInt(match[2], 10);
-                              const key = `${row < 10 ? '0' : ''}${row}_${col < 10 ? '0' : ''}${col}`;
-                              if (TILESETTER_MASKS[key] !== undefined) {
-                                newBlobMap[TILESETTER_MASKS[key]] = tile.tileId;
-                              }
-                            }
-                          }
+                        const currentTile = props.project.tiles.find((t) => t.tileId === props.selectedPaintTileId);
+                        if (!currentTile || !selectedTileset) return;
+                        const match = currentTile.name.match(/_(\d+)_(\d+)(?:\.\w+)?$/);
+                        if (!match) return;
+                        const startRow = parseInt(match[1], 10);
+                        const startCol = parseInt(match[2], 10);
+                        const newSlots: Record<number, number> = {};
+                        for (const [key, mask] of Object.entries(CARDINAL_MASKS)) {
+                          const [rowOff, colOff] = key.split('_').map(Number);
+                          const targetRow = startRow + rowOff;
+                          const targetCol = startCol + colOff;
+                          const targetSuffix = `_${targetRow < 10 ? '0' : ''}${targetRow}_${targetCol < 10 ? '0' : ''}${targetCol}`;
+                          const found = selectedTileset.tileIds.map(id => props.project.tiles.find(t => t.tileId === id)).find(t => t?.name.endsWith(targetSuffix));
+                          if (found) newSlots[mask] = found.tileId;
                         }
-                        props.onUpdateTerrainSet({
-                          ...selectedTerrainSet,
-                          blobMap: newBlobMap,
-                        });
-                        setEditingBrush(false);
+                        props.onUpdateTerrainSet({ ...selectedTerrainSet, slots: { ...selectedTerrainSet.slots, ...newSlots } });
                       }}
-                      title="Automatically map all 47 tiles from the current tileset using their Grid Coordinates"
+                      title="Map a 4x4 block of tiles starting from the current selection as Top-Left"
                     >
-                      Auto-Map Blob
+                      Map from Selection
                     </button>
                   </>
                 ) : (
@@ -2979,32 +2897,22 @@ function LevelAssetPicker(props: {
               </div>
               <div className={editingBrush ? "dense-picker-container" : "picker-grid picker-grid-terrain"}>
                 {editingBrush ? (
-                  <div className="dense-picker-container">
-                    <div className="dense-picker-grid">
-                      {tiles.map((tile) => {
-                        const match = tile.name.match(/_(\d+)_(\d+)(?:\.\w+)?$/);
-                        const gridRow = match ? parseInt(match[1], 10) + 1 : undefined;
-                        const gridColumn = match ? parseInt(match[2], 10) + 1 : undefined;
-                        return (
-                          <button
-                            key={tile.tileId}
-                            className={tile.tileId === props.selectedPaintTileId ? "dense-tile-btn active" : "dense-tile-btn"}
-                            onClick={() => props.onSetPaintTile(tile.tileId)}
-                            title={`${tile.name} (#${tile.tileId})`}
-                            style={gridRow && gridColumn ? { gridRow, gridColumn } : undefined}
-                          >
-                            <TileAssetPreview project={props.project} tile={tile} />
-                            <div className="dense-tile-label">{tile.name}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
+                  <div className="dense-picker-grid">
+                    {tiles.map((tile) => (
+                      <button
+                        key={tile.tileId}
+                        className={tile.tileId === props.selectedPaintTileId ? "dense-tile-btn active" : "dense-tile-btn"}
+                        onClick={() => props.onSetPaintTile(tile.tileId)}
+                        title={`${tile.name} (#${tile.tileId})`}
+                      >
+                        <TileAssetPreview project={props.project} tile={tile} />
+                        <div className="dense-tile-label">{tile.name}</div>
+                      </button>
+                    ))}
                   </div>
                 ) : (
                   filteredTerrainSets.map((terrainSet) => {
-                    const centerTile = terrainSet.slots.center
-                      ? props.project.tiles.find((tile) => tile.tileId === terrainSet.slots.center) ?? null
-                      : null;
+                    const centerTile = props.project.tiles.find((tile) => tile.tileId === (terrainSet.slots[0] || 0)) ?? null;
                     return (
                       <div key={terrainSet.id} className="picker-terrain-card-wrapper">
                         <button
@@ -3013,27 +2921,24 @@ function LevelAssetPicker(props: {
                         >
                           <TileAssetPreview project={props.project} tile={centerTile} />
                           <strong>{terrainSet.name}</strong>
-                          <span>{props.project.tilesets.find((tileset) => tileset.id === terrainSet.tilesetId)?.name ?? "Unknown tileset"}</span>
                         </button>
                         <div className="picker-terrain-actions">
                           <button 
                             className="ghost picker-terrain-action" 
                             onClick={(event) => {
                               event.stopPropagation();
-                              props.onSetTerrainSet(terrainSet.id);
+                              props.onSelectTerrainSet(terrainSet.id);
                               setEditingBrush(true);
                             }}
-                            title="Edit brush set"
                           >
                             ✎
                           </button>
                           <button 
-                            className="ghost picker-terrain-action picker-terrain-action-delete" 
+                            className="ghost picker-terrain-action" 
                             onClick={(event) => {
                               event.stopPropagation();
                               props.onRemoveTerrainSet(terrainSet.id);
                             }}
-                            title="Delete brush set"
                           >
                             ✕
                           </button>
@@ -3047,34 +2952,36 @@ function LevelAssetPicker(props: {
             <div className="picker-terrain-editor">
               <div className="picker-section-header">
                 <strong>{selectedTerrainSet ? selectedTerrainSet.name : "No brush selected"}</strong>
-                {selectedTerrainSet && !editingBrush ? (
+                {selectedTerrainSet && !editingBrush && (
                   <button className="secondary" onClick={() => setEditingBrush(true)}>Edit Tiles</button>
-                ) : (
-                  <span>{currentTile ? `Assign from ${currentTile.name}` : "Select a tile from the list first"}</span>
                 )}
               </div>
               {selectedTerrainSet ? (
-                <div className="terrain-slot-grid modal-terrain-slot-grid">
-                  {slotOrder.map((slot) => {
-                    const tileId = selectedTerrainSet.slots[slot.key];
-                    const tile = tileId ? props.project.tiles.find((entry) => entry.tileId === tileId) ?? null : null;
-                    return (
-                      <button 
-                        key={slot.key} 
-                        className="terrain-slot modal-terrain-slot" 
-                        onClick={() => {
-                          props.onAssignTerrainSlot(slot.key);
-                          setEditingBrush(true);
-                        }}
-                      >
-                        <span className="terrain-slot-label">{slot.label}</span>
-                        <TileAssetPreview project={props.project} tile={tile} />
-                      </button>
-                    );
-                  })}
+                <div className="terrain-blob-editor">
+                  <div className="terrain-dense-group">
+                    <div className="terrain-inner-grid-header">Cardinal 4x4 Grid</div>
+                    <div className="dense-picker-grid" style={{ gridTemplateColumns: "repeat(4, 96px)" }}>
+                      {Array.from({ length: 16 }).map((_, mask) => {
+                        const tileId = selectedTerrainSet.slots[mask];
+                        const tile = tileId ? props.project.tiles.find((t) => t.tileId === tileId) ?? null : null;
+                        const n = mask & 1; const s = mask & 2; const w = mask & 4; const e = mask & 8;
+                        const label = (n ? "N" : "") + (s ? "S" : "") + (w ? "W" : "") + (e ? "E" : "") || "•";
+                        return (
+                          <button
+                            key={mask}
+                            className="dense-tile-btn brush-slot-btn"
+                            onClick={() => props.onAssignTerrainSlot(mask)}
+                          >
+                            <TileAssetPreview project={props.project} tile={tile} scale={6} />
+                            <div className="dense-tile-label">{label}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               ) : (
-                <div className="empty-note">Create or select a brush set, then assign tiles into the 3x3 mask.</div>
+                <div className="empty-note">Create or select a brush set to begin.</div>
               )}
             </div>
           </div>
@@ -3087,9 +2994,11 @@ function LevelAssetPicker(props: {
 function TileAssetPreview({
   project,
   tile,
+  scale: forcedScale,
 }: {
   project: ProjectDocument;
   tile: TilesetTileAsset | null;
+  scale?: number;
 }) {
   if (!tile) {
     return <div className="tile-preview empty" />;
@@ -3099,7 +3008,7 @@ function TileAssetPreview({
   if (!slice || !source) {
     return <div className="tile-preview empty" />;
   }
-  const scale = Math.max(
+  const scale = forcedScale ?? Math.max(
     1,
     Math.floor(
       Math.min(88 / Math.max(1, slice.sourceRect.width), 88 / Math.max(1, slice.sourceRect.height)),

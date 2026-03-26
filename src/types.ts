@@ -87,21 +87,7 @@ export interface TilesetAsset {
   tileIds: number[];
 }
 
-export interface TerrainSetSlots {
-  center: number;
-  top: number;
-  bottom: number;
-  left: number;
-  right: number;
-  topLeft: number;
-  topRight: number;
-  bottomLeft: number;
-  bottomRight: number;
-  innerTopLeft: number;
-  innerTopRight: number;
-  innerBottomLeft: number;
-  innerBottomRight: number;
-}
+export type TerrainSetSlots = Record<number, number>;
 
 export interface TerrainSet {
   id: number;

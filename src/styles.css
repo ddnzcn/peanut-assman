@@ -298,16 +298,51 @@ select {
 }
 
 .terrain-slot {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.25rem;
-  padding: 0.35rem;
+  padding: 0.5rem;
   border: 1px solid var(--border);
-  border-radius: 0.55rem;
-  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  align-items: center;
+  justify-content: center;
 }
 
-.terrain-slot .tile-preview {
-  min-height: 40px;
+.terrain-slot-preview-container {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 8px 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  overflow: hidden;
+  border-radius: 2px;
+}
+
+.terrain-slot-preview-container {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 8px 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  overflow: hidden;
+  border-radius: 2px;
+}
+
+.brush-slot-btn {
+  width: 98px;
+  height: 98px;
+  flex: none;
+}
+
+.terrain-dense-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .terrain-slot-label {
@@ -738,7 +773,7 @@ select {
   min-height: 0;
 }
 
-.navigator-section + .navigator-section {
+.navigator-section+.navigator-section {
   padding-top: 0.8rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -967,7 +1002,7 @@ select {
   gap: 0.35rem;
 }
 
-.inspector-panel label > span:first-child,
+.inspector-panel label>span:first-child,
 .inspector-panel label:not(.checkbox-row) {
   color: #d9e2ea;
 }
