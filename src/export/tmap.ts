@@ -1,9 +1,11 @@
 import type { CollisionObject, LevelDocument, ProjectDocument } from "../types";
-import { crc32, fnv1a32, packFixed88 } from "../utils";
+import { buildRuntimeSpriteCatalog, resolveRuntimeSpriteIdForCell } from "./runtimeSprites";
+import { align, crc32, fnv1a32, packFixed88 } from "../utils";
 
 const TILEMAP_MAGIC = 0x50414d54;
 const HEADER_SIZE = 72;
 const TILESET_DEF_SIZE = 28;
+const TILESET_REMAP_ENTRY_SIZE = 4;
 const LAYER_DEF_SIZE = 50;
 const CHUNK_DEF_SIZE = 22;
 const TILE_ENTRY_SIZE = 8;
@@ -12,8 +14,8 @@ const MARKER_SIZE = 44;
 const STRING_ENTRY_SIZE = 8;
 const STRING_NONE = 0xffffffff;
 
-export function exportTilemapBin(project: ProjectDocument, level: LevelDocument): Uint8Array {
-  const exportState = buildExportState(project, level);
+export async function exportTilemapBin(project: ProjectDocument, level: LevelDocument): Promise<Uint8Array> {
+  const exportState = await buildExportState(project, level);
   const fileSize =
     exportState.stringDataOffset +
     exportState.stringBlob.length;
@@ -36,8 +38,8 @@ export function exportTilemapBin(project: ProjectDocument, level: LevelDocument)
   return bytes;
 }
 
-export function exportLevelDebugJson(project: ProjectDocument, level: LevelDocument): string {
-  const exportState = buildExportState(project, level);
+export async function exportLevelDebugJson(project: ProjectDocument, level: LevelDocument): Promise<string> {
+  const exportState = await buildExportState(project, level);
   return JSON.stringify(
     {
       header: {
@@ -61,8 +63,24 @@ export function exportLevelDebugJson(project: ProjectDocument, level: LevelDocum
   );
 }
 
-function buildExportState(project: ProjectDocument, level: LevelDocument) {
-  const tilesets = project.tilesets.filter((tileset) => level.tilesetIds.includes(tileset.id));
+type ExportState = Awaited<ReturnType<typeof buildExportState>>;
+
+async function buildExportState(project: ProjectDocument, level: LevelDocument) {
+  const catalog = await buildRuntimeSpriteCatalog(project);
+  const chunkTileCapacity = level.chunkWidthTiles * level.chunkHeightTiles;
+  const exportTiles: Array<{ key: string; spriteId: number }> = [];
+  const exportTileIdByKey = new Map<string, number>();
+  const registerExportTile = (key: string, spriteId: number) => {
+    const existing = exportTileIdByKey.get(key);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const exportTileId = exportTiles.length + 1;
+    exportTileIdByKey.set(key, exportTileId);
+    exportTiles.push({ key, spriteId });
+    return exportTileId;
+  };
+
   const layerChunkCounts = new Map<string, number>();
   const chunkDefs: Array<{
     layerIndex: number;
@@ -81,18 +99,36 @@ function buildExportState(project: ProjectDocument, level: LevelDocument) {
       .sort((left, right) => left.chunkY - right.chunkY || left.chunkX - right.chunkX);
     layerChunkCounts.set(layer.id, chunks.length);
     chunks.forEach((chunk) => {
-      const usedTileCount = chunk.tiles.filter((tile) => tile.tileId !== 0).length;
+      const normalizedTiles = Array.from({ length: chunkTileCapacity }, (_, tileIndex) => (
+        chunk.tiles[tileIndex] ?? { tileId: 0, flags: 0 }
+      ));
+      const remappedTiles = normalizedTiles.map((tile, tileIndex) => {
+        if (tile.tileId === 0) {
+          return tile;
+        }
+        const tileX = chunk.chunkX * level.chunkWidthTiles + (tileIndex % level.chunkWidthTiles);
+        const tileY = chunk.chunkY * level.chunkHeightTiles + Math.floor(tileIndex / level.chunkWidthTiles);
+        const resolved = resolveRuntimeSpriteIdForCell(project, catalog, level, layer, tileX, tileY);
+        if (!resolved) {
+          throw new Error(
+            `Level "${level.name}" uses tile ${tile.tileId} in layer "${layer.name}" but it cannot be resolved for runtime export.`,
+          );
+        }
+        const exportTileId = registerExportTile(resolved.exportKey, resolved.spriteId);
+        return { ...tile, tileId: exportTileId };
+      });
+      const usedTileCount = remappedTiles.filter((tile) => tile.tileId !== 0).length;
       chunkDefs.push({
         layerIndex,
         chunkX: chunk.chunkX,
         chunkY: chunk.chunkY,
         flags: 0,
         tileDataOffset: tileDataCursor,
-        tileCount: chunk.tiles.length,
+        tileCount: chunkTileCapacity,
         usedTileCount,
-        tiles: chunk.tiles,
+        tiles: remappedTiles,
       });
-      tileDataCursor += chunk.tiles.length * TILE_ENTRY_SIZE;
+      tileDataCursor += chunkTileCapacity * TILE_ENTRY_SIZE;
     });
   });
 
@@ -167,18 +203,41 @@ function buildExportState(project: ProjectDocument, level: LevelDocument) {
   });
   const stringBlob = new Uint8Array(stringParts);
 
+  const resolvedTilesets = exportTiles.length
+    ? [{
+        id: 1,
+        nameHash: fnv1a32(`${level.name}_tiles`),
+        firstTileId: 1,
+        tileCount: exportTiles.length,
+        tileWidth: level.tileWidth,
+        tileHeight: level.tileHeight,
+        columns: Math.max(1, Math.min(exportTiles.length, Math.max(1, Math.ceil(Math.sqrt(exportTiles.length))))),
+        flags: 0,
+        spriteIds: exportTiles.map((tile) => tile.spriteId),
+      }]
+    : [];
+
   const tilesetTableOffset = HEADER_SIZE;
-  const layerTableOffset = tilesetTableOffset + tilesets.length * TILESET_DEF_SIZE;
-  const chunkTableOffset = layerTableOffset + layers.length * LAYER_DEF_SIZE;
-  const chunkDataOffset = chunkTableOffset + chunkDefs.length * CHUNK_DEF_SIZE;
-  const collisionTableOffset = chunkDataOffset + tileDataCursor;
-  const markerTableOffset = collisionTableOffset + orderedCollisions.length * COLLISION_SIZE;
-  const stringTableOffset = markerTableOffset + markers.length * MARKER_SIZE;
-  const stringDataOffset = stringTableOffset + stringEntries.length * STRING_ENTRY_SIZE;
+  const tilesetRemapTableOffset = align(
+    tilesetTableOffset + resolvedTilesets.length * TILESET_DEF_SIZE,
+    4,
+  );
+  const tilesetRemapTableSize = resolvedTilesets.reduce(
+    (sum, tileset) => sum + tileset.spriteIds.length * TILESET_REMAP_ENTRY_SIZE,
+    0,
+  );
+  const layerTableOffset = align(tilesetRemapTableOffset + tilesetRemapTableSize, 4);
+  const chunkTableOffset = align(layerTableOffset + layers.length * LAYER_DEF_SIZE, 4);
+  const chunkDataOffset = align(chunkTableOffset + chunkDefs.length * CHUNK_DEF_SIZE, 4);
+  const collisionTableOffset = align(chunkDataOffset + tileDataCursor, 4);
+  const markerTableOffset = align(collisionTableOffset + orderedCollisions.length * COLLISION_SIZE, 4);
+  const stringTableOffset = align(markerTableOffset + markers.length * MARKER_SIZE, 4);
+  const stringDataOffset = align(stringTableOffset + stringEntries.length * STRING_ENTRY_SIZE, 4);
 
   return {
     level,
-    tilesets,
+    tilesets: resolvedTilesets,
+    exportTiles,
     layers,
     chunkDefs,
     collisions: orderedCollisions,
@@ -187,6 +246,7 @@ function buildExportState(project: ProjectDocument, level: LevelDocument) {
     stringList,
     stringBlob,
     tilesetTableOffset,
+    tilesetRemapTableOffset,
     layerTableOffset,
     chunkTableOffset,
     chunkDataOffset,
@@ -197,10 +257,10 @@ function buildExportState(project: ProjectDocument, level: LevelDocument) {
   };
 }
 
-function writeHeader(view: DataView, state: ReturnType<typeof buildExportState>, fileSize: number) {
+function writeHeader(view: DataView, state: ExportState, fileSize: number) {
   view.setUint32(0, TILEMAP_MAGIC, true);
   view.setUint16(4, 2, true);
-  view.setUint16(6, 0, true);
+  view.setUint16(6, 1, true);
   view.setUint32(8, fileSize, true);
   view.setUint32(12, 0, true);
   view.setUint16(16, state.level.mapWidthTiles, true);
@@ -225,22 +285,31 @@ function writeHeader(view: DataView, state: ReturnType<typeof buildExportState>,
   view.setUint32(68, state.stringDataOffset, true);
 }
 
-function writeTilesets(view: DataView, state: ReturnType<typeof buildExportState>) {
+function writeTilesets(view: DataView, state: ExportState) {
+  let remapCursor = state.tilesetRemapTableOffset;
   state.tilesets.forEach((tileset, index) => {
     const offset = state.tilesetTableOffset + index * TILESET_DEF_SIZE;
     view.setUint32(offset + 0, tileset.id, true);
     view.setUint32(offset + 4, tileset.nameHash, true);
     view.setUint32(offset + 8, tileset.firstTileId, true);
     view.setUint32(offset + 12, tileset.tileCount, true);
-    view.setUint32(offset + 16, tileset.firstAtlasSpriteId, true);
+    view.setUint32(offset + 16, remapCursor, true);
     view.setUint16(offset + 20, tileset.tileWidth, true);
     view.setUint16(offset + 22, tileset.tileHeight, true);
     view.setUint16(offset + 24, tileset.columns, true);
     view.setUint16(offset + 26, tileset.flags, true);
+    tileset.spriteIds.forEach((spriteId, spriteIndex) => {
+      view.setUint32(
+        remapCursor + spriteIndex * TILESET_REMAP_ENTRY_SIZE,
+        spriteId,
+        true,
+      );
+    });
+    remapCursor += tileset.spriteIds.length * TILESET_REMAP_ENTRY_SIZE;
   });
 }
 
-function writeLayers(view: DataView, state: ReturnType<typeof buildExportState>) {
+function writeLayers(view: DataView, state: ExportState) {
   state.layers.forEach((layer, index) => {
     const offset = state.layerTableOffset + index * LAYER_DEF_SIZE;
     view.setUint32(offset + 0, layer.layerId, true);
@@ -265,7 +334,7 @@ function writeLayers(view: DataView, state: ReturnType<typeof buildExportState>)
   });
 }
 
-function writeChunks(view: DataView, state: ReturnType<typeof buildExportState>) {
+function writeChunks(view: DataView, state: ExportState) {
   state.chunkDefs.forEach((chunk, index) => {
     const offset = state.chunkTableOffset + index * CHUNK_DEF_SIZE;
     view.setUint16(offset + 0, chunk.layerIndex, true);
@@ -280,7 +349,7 @@ function writeChunks(view: DataView, state: ReturnType<typeof buildExportState>)
   });
 }
 
-function writeChunkTileData(view: DataView, state: ReturnType<typeof buildExportState>) {
+function writeChunkTileData(view: DataView, state: ExportState) {
   state.chunkDefs.forEach((chunk) => {
     chunk.tiles.forEach((tile, index) => {
       const offset = state.chunkDataOffset + chunk.tileDataOffset + index * TILE_ENTRY_SIZE;
@@ -292,7 +361,7 @@ function writeChunkTileData(view: DataView, state: ReturnType<typeof buildExport
   });
 }
 
-function writeCollisions(view: DataView, state: ReturnType<typeof buildExportState>) {
+function writeCollisions(view: DataView, state: ExportState) {
   state.collisions.forEach((collision, index) => {
     const offset = state.collisionTableOffset + index * COLLISION_SIZE;
     view.setUint16(offset + 0, collisionTypeValue(collision), true);
@@ -306,7 +375,7 @@ function writeCollisions(view: DataView, state: ReturnType<typeof buildExportSta
   });
 }
 
-function writeMarkers(view: DataView, state: ReturnType<typeof buildExportState>) {
+function writeMarkers(view: DataView, state: ExportState) {
   state.markers.forEach((marker, index) => {
     const offset = state.markerTableOffset + index * MARKER_SIZE;
     view.setUint32(offset + 0, marker.markerId, true);
@@ -324,7 +393,7 @@ function writeMarkers(view: DataView, state: ReturnType<typeof buildExportState>
   });
 }
 
-function writeStrings(view: DataView, state: ReturnType<typeof buildExportState>) {
+function writeStrings(view: DataView, state: ExportState) {
   state.stringEntries.forEach((entry, index) => {
     const offset = state.stringTableOffset + index * STRING_ENTRY_SIZE;
     view.setUint32(offset + 0, entry.offset, true);

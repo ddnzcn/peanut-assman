@@ -10,7 +10,7 @@ import type {
 
 export const DEFAULT_ATLAS_OPTIONS: BuildOptions = {
   maxPageSize: 1024,
-  allowRotation: true,
+  allowRotation: false,
   padding: 2,
   extrusion: 2,
   includeHashTable: true,
@@ -99,6 +99,7 @@ export function createDefaultLevel(): LevelDocument {
     tileHeight: 16,
     chunkWidthTiles: 16,
     chunkHeightTiles: 16,
+    tileIds: [],
     tilesetIds: [],
     layers: [
       createLevelLayer("layer-1", "Ground", 64, 36, { hasTiles: true }),

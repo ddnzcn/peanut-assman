@@ -61,6 +61,42 @@ export function downloadBlob(blob: Blob, fileName: string): void {
   URL.revokeObjectURL(url);
 }
 
+type SavePickerWindow = Window & {
+  showSaveFilePicker?: (options?: {
+    suggestedName?: string;
+    types?: Array<{
+      description?: string;
+      accept: Record<string, string[]>;
+    }>;
+  }) => Promise<{
+    createWritable: () => Promise<{
+      write: (data: Blob) => Promise<void>;
+      close: () => Promise<void>;
+    }>;
+  }>;
+};
+
+export async function saveBlobWithPicker(
+  blob: Blob,
+  fileName: string,
+  description: string,
+  accept: Record<string, string[]>,
+): Promise<void> {
+  const pickerWindow = window as SavePickerWindow;
+  if (!pickerWindow.showSaveFilePicker) {
+    downloadBlob(blob, fileName);
+    return;
+  }
+
+  const handle = await pickerWindow.showSaveFilePicker({
+    suggestedName: fileName,
+    types: [{ description, accept }],
+  });
+  const writable = await handle.createWritable();
+  await writable.write(blob);
+  await writable.close();
+}
+
 export function formatBytes(value: number): string {
   if (value < 1024) {
     return `${value} B`;

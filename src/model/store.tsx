@@ -8,6 +8,7 @@ import {
 import { createDefaultLevel, createEmptyProject, DEFAULT_EDITOR_STATE } from "./project";
 import type {
   AppState,
+  HistorySnapshot,
   LevelDocument,
   LevelLayer,
   ProjectAction,
@@ -16,11 +17,36 @@ import type {
 } from "../types";
 import { chunkKey, clamp, fnv1a32 } from "../utils";
 
+const HISTORY_LIMIT = 100;
+const TRACKED_ACTIONS = new Set<ProjectAction["type"]>([
+  "replaceProject",
+  "updateAtlasSettings",
+  "addSourceImages",
+  "addSlices",
+  "addSlicesToAtlas",
+  "addLevelTiles",
+  "removeSlicesFromAtlas",
+  "updateSliceKinds",
+  "publishTileset",
+  "upsertTerrainSet",
+  "removeTerrainSet",
+  "reorderSprites",
+  "addLevel",
+  "removeLevel",
+  "addLayer",
+  "reorderLayer",
+  "removeLayer",
+  "updateLevel",
+  "replaceLevelChunks",
+]);
+
 const initialState: AppState = {
   project: createEmptyProject(),
   editor: DEFAULT_EDITOR_STATE,
   error: null,
   busy: false,
+  undoStack: [],
+  redoStack: [],
 };
 
 interface StoreValue {
@@ -44,7 +70,69 @@ export function useProjectStore(): StoreValue {
   return context;
 }
 
+function createHistorySnapshot(state: AppState): HistorySnapshot {
+  return {
+    project: state.project,
+    editor: state.editor,
+  };
+}
+
+function pushHistoryEntry(state: AppState, nextState: AppState): AppState {
+  return {
+    ...nextState,
+    undoStack: [...state.undoStack, createHistorySnapshot(state)].slice(-HISTORY_LIMIT),
+    redoStack: [],
+  };
+}
+
+function restoreHistorySnapshot(
+  state: AppState,
+  snapshot: HistorySnapshot,
+  history: Pick<AppState, "undoStack" | "redoStack">,
+): AppState {
+  return {
+    ...state,
+    project: snapshot.project,
+    editor: snapshot.editor,
+    undoStack: history.undoStack,
+    redoStack: history.redoStack,
+  };
+}
+
 function reducer(state: AppState, action: ProjectAction): AppState {
+  if (action.type === "undo") {
+    if (!state.undoStack.length) {
+      return state;
+    }
+    const previous = state.undoStack[state.undoStack.length - 1];
+    return restoreHistorySnapshot(state, previous, {
+      undoStack: state.undoStack.slice(0, -1),
+      redoStack: [...state.redoStack, createHistorySnapshot(state)].slice(-HISTORY_LIMIT),
+    });
+  }
+
+  if (action.type === "redo") {
+    if (!state.redoStack.length) {
+      return state;
+    }
+    const next = state.redoStack[state.redoStack.length - 1];
+    return restoreHistorySnapshot(state, next, {
+      undoStack: [...state.undoStack, createHistorySnapshot(state)].slice(-HISTORY_LIMIT),
+      redoStack: state.redoStack.slice(0, -1),
+    });
+  }
+
+  const nextState = reducePresent(state, action);
+  if (nextState === state) {
+    return state;
+  }
+  if (TRACKED_ACTIONS.has(action.type)) {
+    return pushHistoryEntry(state, nextState);
+  }
+  return nextState;
+}
+
+function reducePresent(state: AppState, action: ProjectAction): AppState {
   switch (action.type) {
     case "setWorkspace":
       return { ...state, editor: { ...state.editor, workspace: action.workspace } };
@@ -204,6 +292,88 @@ function reducer(state: AppState, action: ProjectAction): AppState {
           idCounters: {
             ...state.project.idCounters,
             sprite: state.project.idCounters.sprite + newSprites.length,
+          },
+        },
+      };
+    }
+    case "addLevelTiles": {
+      const levelIndex = state.project.levels.findIndex((entry) => entry.id === action.levelId);
+      if (levelIndex < 0) {
+        return state;
+      }
+
+      const level = state.project.levels[levelIndex];
+      const sliceById = new Map(state.project.slices.map((slice) => [slice.id, slice]));
+      const spriteBySliceId = new Map(state.project.sprites.map((sprite) => [sprite.sliceId, sprite]));
+      const tileBySliceId = new Map(state.project.tiles.map((tile) => [tile.sliceId, tile]));
+
+      let nextSpriteId = state.project.idCounters.sprite;
+      let nextTileId = state.project.idCounters.tile;
+      const newSprites: ProjectDocument["sprites"] = [];
+      const updatedSprites = state.project.sprites.map((sprite) =>
+        action.sliceIds.includes(sprite.sliceId) ? { ...sprite, includeInAtlas: true } : sprite,
+      );
+      const newTiles: ProjectDocument["tiles"] = [];
+      const addedTileIds: number[] = [];
+
+      for (const sliceId of action.sliceIds) {
+        const slice = sliceById.get(sliceId);
+        if (!slice || (slice.kind !== "tile" && slice.kind !== "both")) {
+          continue;
+        }
+
+        let sprite = spriteBySliceId.get(sliceId);
+        if (!sprite) {
+          const name = `${slice.name}.png`;
+          sprite = {
+            id: nextSpriteId,
+            sliceId,
+            name,
+            nameHash: fnv1a32(name),
+            includeInAtlas: true,
+          };
+          nextSpriteId += 1;
+          newSprites.push(sprite);
+          spriteBySliceId.set(sliceId, sprite);
+        }
+
+        let tile = tileBySliceId.get(sliceId);
+        if (!tile) {
+          tile = {
+            tileId: nextTileId,
+            sliceId,
+            spriteId: sprite.id,
+            name: slice.name,
+          };
+          nextTileId += 1;
+          newTiles.push(tile);
+          tileBySliceId.set(sliceId, tile);
+        }
+
+        addedTileIds.push(tile.tileId);
+      }
+
+      if (!addedTileIds.length && !newSprites.length && !newTiles.length) {
+        return state;
+      }
+
+      const nextLevels = [...state.project.levels];
+      nextLevels[levelIndex] = {
+        ...level,
+        tileIds: [...new Set([...level.tileIds, ...addedTileIds])],
+      };
+
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          sprites: [...updatedSprites, ...newSprites],
+          tiles: [...state.project.tiles, ...newTiles],
+          levels: nextLevels,
+          idCounters: {
+            ...state.project.idCounters,
+            sprite: nextSpriteId,
+            tile: nextTileId,
           },
         },
       };

@@ -16,6 +16,7 @@ export type LevelTool =
 export type SlicerMode = "grid" | "manual";
 export type CollisionTypeName = "Solid" | "OneWay" | "Trigger" | "Hurt";
 export type MarkerShapeName = "Point" | "Rect";
+export type AutotileMode = "cardinal" | "subtile" | "blob47" | "rpgmaker";
 
 export interface BuildOptions {
   maxPageSize: PotSize;
@@ -93,7 +94,9 @@ export interface TerrainSet {
   id: number;
   name: string;
   tilesetId: number;
+  levelId?: string;
   slots: TerrainSetSlots;
+  mode: AutotileMode;
   blobMap?: Record<number, number>;
 }
 
@@ -167,6 +170,7 @@ export interface LevelDocument {
   tileHeight: number;
   chunkWidthTiles: number;
   chunkHeightTiles: number;
+  tileIds: number[];
   tilesetIds: number[];
   layers: LevelLayer[];
   chunks: Record<string, TileChunk>;
@@ -250,6 +254,13 @@ export interface AppState {
   editor: EditorState;
   error: string | null;
   busy: boolean;
+  undoStack: HistorySnapshot[];
+  redoStack: HistorySnapshot[];
+}
+
+export interface HistorySnapshot {
+  project: ProjectDocument;
+  editor: EditorState;
 }
 
 export interface SheetSlicePreview {
@@ -259,6 +270,8 @@ export interface SheetSlicePreview {
 }
 
 export interface ImportSprite {
+  id: number;
+  nameHash: number;
   fileName: string;
   sourceWidth: number;
   sourceHeight: number;
@@ -272,8 +285,6 @@ export interface ImportSprite {
 }
 
 export interface PreparedSprite extends ImportSprite {
-  id: number;
-  nameHash: number;
   rotated: boolean;
   frameWidth: number;
   frameHeight: number;
@@ -308,6 +319,8 @@ export interface PackedAtlas {
 }
 
 export type ProjectAction =
+  | { type: "undo" }
+  | { type: "redo" }
   | { type: "setWorkspace"; workspace: WorkspaceMode }
   | { type: "setError"; error: string | null }
   | { type: "setBusy"; busy: boolean }
@@ -334,6 +347,7 @@ export type ProjectAction =
   | { type: "addSourceImages"; sources: SourceImageAsset[] }
   | { type: "addSlices"; slices: SliceAsset[]; sprites?: SpriteAsset[] }
   | { type: "addSlicesToAtlas"; sliceIds: string[] }
+  | { type: "addLevelTiles"; levelId: string; sliceIds: string[] }
   | { type: "removeSlicesFromAtlas"; sliceIds: string[] }
   | { type: "updateSliceKinds"; sliceIds: string[]; kind: SliceKind }
   | { type: "publishTileset"; tileset: TilesetAsset; tiles: TilesetTileAsset[]; sprites: SpriteAsset[] }

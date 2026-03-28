@@ -10,6 +10,7 @@ import type {
   SpriteAsset,
   TileCell,
   TileChunk,
+  TerrainSet,
   TilesetAsset,
   TilesetTileAsset,
 } from "../types";
@@ -27,8 +28,8 @@ export function createExampleProject(): ProjectDocument {
   const sprites = createExampleSprites(slices);
   const tiles = createExampleTilesetTiles(slices, sprites);
   const tileset = createExampleTileset(tiles, sprites);
-  const terrainSet = createExampleTerrainSet(tileset.id, tiles);
-  const level = createExampleLevel(tileset.id);
+  const level = createExampleLevel(tileset.id, tiles);
+  const terrainSet = createExampleTerrainSet(tileset.id, level.id, tiles);
 
   return {
     version: 1,
@@ -154,7 +155,7 @@ function createExampleTileset(
   };
 }
 
-function createExampleLevel(tilesetId: number): LevelDocument {
+function createExampleLevel(tilesetId: number, tiles: TilesetTileAsset[]): LevelDocument {
   const groundLayer = createLevelLayer("layer-1", "Ground", MAP_WIDTH_TILES, MAP_HEIGHT_TILES, { hasTiles: true });
   const gameplayLayer = createLevelLayer("layer-2", "Gameplay", MAP_WIDTH_TILES, MAP_HEIGHT_TILES, {
     hasCollision: true,
@@ -241,6 +242,7 @@ function createExampleLevel(tilesetId: number): LevelDocument {
     tileHeight: TILE_HEIGHT,
     chunkWidthTiles: CHUNK_WIDTH_TILES,
     chunkHeightTiles: CHUNK_HEIGHT_TILES,
+    tileIds: tiles.map((tile) => tile.tileId),
     tilesetIds: [tilesetId],
     layers: [groundLayer, gameplayLayer, foregroundLayer],
     chunks,
@@ -249,7 +251,7 @@ function createExampleLevel(tilesetId: number): LevelDocument {
   };
 }
 
-function createExampleTerrainSet(tilesetId: number, tiles: TilesetTileAsset[]) {
+function createExampleTerrainSet(tilesetId: number, levelId: string, tiles: TilesetTileAsset[]): TerrainSet {
   const slots: Record<number, number> = {};
   for (let i = 0; i < 16; i++) {
     slots[i] = tiles[0]?.tileId ?? 0;
@@ -258,7 +260,9 @@ function createExampleTerrainSet(tilesetId: number, tiles: TilesetTileAsset[]) {
     id: 1,
     name: "terrain_basic",
     tilesetId,
+    levelId,
     slots,
+    mode: "cardinal",
   };
 }
 

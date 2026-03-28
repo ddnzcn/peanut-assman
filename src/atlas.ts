@@ -6,7 +6,7 @@ import type {
   PackedAtlas,
   PreparedSprite,
 } from "./types";
-import { align, crc32, fnv1a32 } from "./utils";
+import { align, crc32 } from "./utils";
 
 const MAGIC = 0x54443241;
 const VERSION_MAJOR = 1;
@@ -69,9 +69,7 @@ export function buildAtlas(
   imports: ImportSprite[],
   options: BuildOptions,
 ): PackedAtlas {
-  const prepared = imports.map((sprite, index) =>
-    prepareSprite(sprite, index, options),
-  );
+  const prepared = imports.map((sprite) => prepareSprite(sprite, options));
 
   const { pages, candidateDebug, chosenCandidate } = selectBestPacking(
     prepared,
@@ -109,7 +107,6 @@ export function buildAtlas(
 
 function prepareSprite(
   sprite: ImportSprite,
-  index: number,
   options: BuildOptions,
 ): PreparedSprite {
   const contentWidth = sprite.trimmedWidth;
@@ -127,8 +124,6 @@ function prepareSprite(
 
   return {
     ...sprite,
-    id: index,
-    nameHash: fnv1a32(sprite.fileName),
     rotated: false,
     frameWidth,
     frameHeight,
@@ -692,14 +687,20 @@ function buildMetadata(
     : [];
 
   const payloadCrc32 = crc32(atlasBin);
-  const pageTableOffset = HEADER_SIZE;
-  const spriteTableOffset = pageTableOffset + pages.length * PAGE_SIZE;
-  const animTableOffset = spriteTableOffset + sortedPlacements.length * SPRITE_SIZE;
+  const pageTableOffset = align(HEADER_SIZE, 4);
+  const spriteTableOffset = align(pageTableOffset + pages.length * PAGE_SIZE, 4);
+  const animTableOffset = align(
+    spriteTableOffset + sortedPlacements.length * SPRITE_SIZE,
+    4,
+  );
   const frameTableOffset = animTableOffset;
-  const hashTableOffset = hashEntries.length > 0 ? frameTableOffset : 0;
-  const fileSize =
+  const hashTableOffset =
+    hashEntries.length > 0 ? align(frameTableOffset, 4) : 0;
+  const fileSize = align(
     (hashEntries.length > 0 ? hashTableOffset : frameTableOffset) +
-    hashEntries.length * HASH_SIZE;
+      hashEntries.length * HASH_SIZE,
+    4,
+  );
   const meta = new Uint8Array(fileSize);
   const view = new DataView(meta.buffer);
 
