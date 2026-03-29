@@ -258,9 +258,26 @@ export interface AppState {
   redoStack: HistorySnapshot[];
 }
 
+export interface LevelHistoryPatch {
+  name?: string;
+  mapWidthTiles?: number;
+  mapHeightTiles?: number;
+  tileWidth?: number;
+  tileHeight?: number;
+  chunkWidthTiles?: number;
+  chunkHeightTiles?: number;
+  tileIds?: number[];
+  tilesetIds?: number[];
+  layers?: LevelLayer[];
+  chunks?: Record<string, TileChunk | null>;
+  collisions?: CollisionObject[];
+  markers?: MarkerObject[];
+}
+
 export interface HistorySnapshot {
-  project: ProjectDocument;
-  editor: EditorState;
+  levelId: string;
+  previousPatch: LevelHistoryPatch;
+  nextPatch: LevelHistoryPatch;
 }
 
 export interface SheetSlicePreview {

@@ -83,6 +83,7 @@ export function renderLevelCanvas(
   level: LevelDocument | null,
   selectedLayer: LevelLayer | null,
   zoom: number,
+  onInvalidate?: () => void,
 ) {
   if (!canvas || !level) {
     return;
@@ -146,7 +147,7 @@ export function renderLevelCanvas(
           const blobAsset = tileById.get(blobTileId);
           const blobSlice = blobAsset ? sliceById.get(blobAsset.sliceId) : null;
           const blobSource = blobSlice ? sourceById.get(blobSlice.sourceImageId) : null;
-          const blobImage = blobSource ? getCachedRenderImage(blobSource.id, blobSource.dataUrl) : null;
+          const blobImage = blobSource ? getCachedRenderImage(blobSource.id, blobSource.dataUrl, onInvalidate) : null;
           if (blobSlice && blobImage?.complete && blobImage.naturalWidth) {
             context.drawImage(
               blobImage,
@@ -198,7 +199,7 @@ export function renderLevelCanvas(
             const qTile = qTileId ? tileById.get(qTileId) : null;
             const qSlice = qTile ? sliceById.get(qTile.sliceId) : null;
             const qSource = qSlice ? sourceById.get(qSlice.sourceImageId) : null;
-            const qImage = qSource ? getCachedRenderImage(qSource.id, qSource.dataUrl) : null;
+            const qImage = qSource ? getCachedRenderImage(qSource.id, qSource.dataUrl, onInvalidate) : null;
 
             if (qSlice && qImage?.complete && qImage.naturalWidth) {
               context.drawImage(
@@ -227,7 +228,7 @@ export function renderLevelCanvas(
 
         const slice = tileAsset ? sliceById.get(tileAsset.sliceId) : null;
         const source = slice ? sourceById.get(slice.sourceImageId) : null;
-        const image = source ? getCachedRenderImage(source.id, source.dataUrl) : null;
+        const image = source ? getCachedRenderImage(source.id, source.dataUrl, onInvalidate) : null;
         if (!tileAsset || !slice || !source || !image?.complete || !image.naturalWidth) {
           context.fillStyle = "#37526a";
           context.fillRect(x * tileW, y * tileH, tileW, tileH);
@@ -304,12 +305,17 @@ export function renderLevelCanvas(
 
 const renderImageCache = new Map<string, HTMLImageElement>();
 
-function getCachedRenderImage(sourceId: string, dataUrl: string) {
+function getCachedRenderImage(sourceId: string, dataUrl: string, onInvalidate?: () => void) {
   let image = renderImageCache.get(sourceId);
   if (!image) {
     image = new Image();
     image.src = dataUrl;
     renderImageCache.set(sourceId, image);
+  } else if (image.src !== dataUrl) {
+    image.src = dataUrl;
+  }
+  if (onInvalidate && (!image.complete || !image.naturalWidth)) {
+    image.addEventListener("load", onInvalidate, { once: true });
   }
   return image;
 }

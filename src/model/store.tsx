@@ -10,6 +10,7 @@ import type {
   AppState,
   HistorySnapshot,
   LevelDocument,
+  LevelHistoryPatch,
   LevelLayer,
   ProjectAction,
   ProjectDocument,
@@ -18,27 +19,7 @@ import type {
 import { chunkKey, clamp, fnv1a32 } from "../utils";
 
 const HISTORY_LIMIT = 100;
-const TRACKED_ACTIONS = new Set<ProjectAction["type"]>([
-  "replaceProject",
-  "updateAtlasSettings",
-  "addSourceImages",
-  "addSlices",
-  "addSlicesToAtlas",
-  "addLevelTiles",
-  "removeSlicesFromAtlas",
-  "updateSliceKinds",
-  "publishTileset",
-  "upsertTerrainSet",
-  "removeTerrainSet",
-  "reorderSprites",
-  "addLevel",
-  "removeLevel",
-  "addLayer",
-  "reorderLayer",
-  "removeLayer",
-  "updateLevel",
-  "replaceLevelChunks",
-]);
+const TRACKED_ACTIONS = new Set<ProjectAction["type"]>(["updateLevel", "replaceLevelChunks"]);
 
 const initialState: AppState = {
   project: createEmptyProject(),
@@ -70,33 +51,123 @@ export function useProjectStore(): StoreValue {
   return context;
 }
 
-function createHistorySnapshot(state: AppState): HistorySnapshot {
+function createLevelHistorySnapshot(previousState: AppState, nextState: AppState, levelId: string): HistorySnapshot | null {
+  const previousLevel = previousState.project.levels.find((level) => level.id === levelId);
+  const nextLevel = nextState.project.levels.find((level) => level.id === levelId);
+  if (!previousLevel || !nextLevel) {
+    return null;
+  }
+  const previousPatch = buildLevelHistoryPatch(nextLevel, previousLevel);
+  const nextPatch = buildLevelHistoryPatch(previousLevel, nextLevel);
+  if (!previousPatch || !nextPatch) {
+    return null;
+  }
   return {
-    project: state.project,
-    editor: state.editor,
+    levelId,
+    previousPatch,
+    nextPatch,
   };
 }
 
-function pushHistoryEntry(state: AppState, nextState: AppState): AppState {
+function createHistorySnapshot(state: AppState, action: ProjectAction, nextState: AppState): HistorySnapshot | null {
+  if (action.type === "updateLevel") {
+    return createLevelHistorySnapshot(state, nextState, action.level.id);
+  }
+  if (action.type === "replaceLevelChunks") {
+    return createLevelHistorySnapshot(state, nextState, action.levelId);
+  }
+  return null;
+}
+
+function pushHistoryEntry(state: AppState, nextState: AppState, snapshot: HistorySnapshot): AppState {
   return {
     ...nextState,
-    undoStack: [...state.undoStack, createHistorySnapshot(state)].slice(-HISTORY_LIMIT),
+    undoStack: [...state.undoStack, snapshot].slice(-HISTORY_LIMIT),
     redoStack: [],
   };
 }
 
-function restoreHistorySnapshot(
+function applyHistorySnapshot(
   state: AppState,
   snapshot: HistorySnapshot,
+  direction: "undo" | "redo",
   history: Pick<AppState, "undoStack" | "redoStack">,
 ): AppState {
   return {
     ...state,
-    project: snapshot.project,
-    editor: snapshot.editor,
+    project: {
+      ...state.project,
+      levels: state.project.levels.map((level) =>
+        level.id === snapshot.levelId
+          ? applyLevelHistoryPatch(level, direction === "undo" ? snapshot.previousPatch : snapshot.nextPatch)
+          : level,
+      ),
+    },
     undoStack: history.undoStack,
     redoStack: history.redoStack,
   };
+}
+
+function buildLevelHistoryPatch(fromLevel: LevelDocument, toLevel: LevelDocument): LevelHistoryPatch | null {
+  const patch: LevelHistoryPatch = {};
+
+  if (fromLevel.name !== toLevel.name) patch.name = toLevel.name;
+  if (fromLevel.mapWidthTiles !== toLevel.mapWidthTiles) patch.mapWidthTiles = toLevel.mapWidthTiles;
+  if (fromLevel.mapHeightTiles !== toLevel.mapHeightTiles) patch.mapHeightTiles = toLevel.mapHeightTiles;
+  if (fromLevel.tileWidth !== toLevel.tileWidth) patch.tileWidth = toLevel.tileWidth;
+  if (fromLevel.tileHeight !== toLevel.tileHeight) patch.tileHeight = toLevel.tileHeight;
+  if (fromLevel.chunkWidthTiles !== toLevel.chunkWidthTiles) patch.chunkWidthTiles = toLevel.chunkWidthTiles;
+  if (fromLevel.chunkHeightTiles !== toLevel.chunkHeightTiles) patch.chunkHeightTiles = toLevel.chunkHeightTiles;
+  if (fromLevel.tileIds !== toLevel.tileIds) patch.tileIds = [...toLevel.tileIds];
+  if (fromLevel.tilesetIds !== toLevel.tilesetIds) patch.tilesetIds = [...toLevel.tilesetIds];
+  if (fromLevel.layers !== toLevel.layers) patch.layers = structuredClone(toLevel.layers);
+  if (fromLevel.collisions !== toLevel.collisions) patch.collisions = structuredClone(toLevel.collisions);
+  if (fromLevel.markers !== toLevel.markers) patch.markers = structuredClone(toLevel.markers);
+
+  if (fromLevel.chunks !== toLevel.chunks) {
+    const chunkKeys = new Set([...Object.keys(fromLevel.chunks), ...Object.keys(toLevel.chunks)]);
+    const chunksPatch: Record<string, TileChunk | null> = {};
+    chunkKeys.forEach((key) => {
+      if (fromLevel.chunks[key] !== toLevel.chunks[key]) {
+        chunksPatch[key] = toLevel.chunks[key] ? structuredClone(toLevel.chunks[key]) : null;
+      }
+    });
+    if (Object.keys(chunksPatch).length) {
+      patch.chunks = chunksPatch;
+    }
+  }
+
+  return Object.keys(patch).length ? patch : null;
+}
+
+function applyLevelHistoryPatch(level: LevelDocument, patch: LevelHistoryPatch): LevelDocument {
+  const nextLevel: LevelDocument = { ...level };
+
+  if ("name" in patch) nextLevel.name = patch.name!;
+  if ("mapWidthTiles" in patch) nextLevel.mapWidthTiles = patch.mapWidthTiles!;
+  if ("mapHeightTiles" in patch) nextLevel.mapHeightTiles = patch.mapHeightTiles!;
+  if ("tileWidth" in patch) nextLevel.tileWidth = patch.tileWidth!;
+  if ("tileHeight" in patch) nextLevel.tileHeight = patch.tileHeight!;
+  if ("chunkWidthTiles" in patch) nextLevel.chunkWidthTiles = patch.chunkWidthTiles!;
+  if ("chunkHeightTiles" in patch) nextLevel.chunkHeightTiles = patch.chunkHeightTiles!;
+  if ("tileIds" in patch) nextLevel.tileIds = [...patch.tileIds!];
+  if ("tilesetIds" in patch) nextLevel.tilesetIds = [...patch.tilesetIds!];
+  if ("layers" in patch) nextLevel.layers = structuredClone(patch.layers!);
+  if ("collisions" in patch) nextLevel.collisions = structuredClone(patch.collisions!);
+  if ("markers" in patch) nextLevel.markers = structuredClone(patch.markers!);
+  if ("chunks" in patch) {
+    const nextChunks = { ...level.chunks };
+    Object.entries(patch.chunks!).forEach(([key, chunk]) => {
+      if (chunk === null) {
+        delete nextChunks[key];
+      } else {
+        nextChunks[key] = structuredClone(chunk);
+      }
+    });
+    nextLevel.chunks = nextChunks;
+  }
+
+  return nextLevel;
 }
 
 function reducer(state: AppState, action: ProjectAction): AppState {
@@ -105,9 +176,9 @@ function reducer(state: AppState, action: ProjectAction): AppState {
       return state;
     }
     const previous = state.undoStack[state.undoStack.length - 1];
-    return restoreHistorySnapshot(state, previous, {
+    return applyHistorySnapshot(state, previous, "undo", {
       undoStack: state.undoStack.slice(0, -1),
-      redoStack: [...state.redoStack, createHistorySnapshot(state)].slice(-HISTORY_LIMIT),
+      redoStack: [...state.redoStack, previous].slice(-HISTORY_LIMIT),
     });
   }
 
@@ -116,8 +187,8 @@ function reducer(state: AppState, action: ProjectAction): AppState {
       return state;
     }
     const next = state.redoStack[state.redoStack.length - 1];
-    return restoreHistorySnapshot(state, next, {
-      undoStack: [...state.undoStack, createHistorySnapshot(state)].slice(-HISTORY_LIMIT),
+    return applyHistorySnapshot(state, next, "redo", {
+      undoStack: [...state.undoStack, next].slice(-HISTORY_LIMIT),
       redoStack: state.redoStack.slice(0, -1),
     });
   }
@@ -127,7 +198,10 @@ function reducer(state: AppState, action: ProjectAction): AppState {
     return state;
   }
   if (TRACKED_ACTIONS.has(action.type)) {
-    return pushHistoryEntry(state, nextState);
+    const snapshot = createHistorySnapshot(state, action, nextState);
+    if (snapshot) {
+      return pushHistoryEntry(state, nextState, snapshot);
+    }
   }
   return nextState;
 }

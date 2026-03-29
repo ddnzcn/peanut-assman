@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import type {
   BuildOptions,
   GridSliceOptions,
@@ -18,6 +18,51 @@ import { formatBytes } from "../../utils";
 import { getTerrainSetMarkerTileId } from "../../terrain";
 import type { SlicerCanvasTool } from "./constants";
 import { TileAssetPreview } from "./shared";
+
+function DraftNumberInput(props: {
+  value: number;
+  onCommit: (value: number) => void;
+  min?: number;
+  step?: number;
+}) {
+  const [draft, setDraft] = useState(() => String(props.value));
+
+  useEffect(() => {
+    setDraft(String(props.value));
+  }, [props.value]);
+
+  function commit(nextDraft: string) {
+    if (nextDraft.trim() === "" || nextDraft === "-" || nextDraft === "." || nextDraft === "-.") {
+      setDraft(String(props.value));
+      return;
+    }
+    const parsed = Number(nextDraft);
+    if (Number.isNaN(parsed)) {
+      setDraft(String(props.value));
+      return;
+    }
+    const nextValue = props.min !== undefined ? Math.max(props.min, parsed) : parsed;
+    props.onCommit(nextValue);
+    setDraft(String(nextValue));
+  }
+
+  return (
+    <input
+      type="number"
+      min={props.min}
+      step={props.step}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={(event) => commit(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          commit((event.target as HTMLInputElement).value);
+          (event.target as HTMLInputElement).blur();
+        }
+      }}
+    />
+  );
+}
 
 function RecentLevelAssetsSection(props: {
   project: ProjectDocument;
@@ -142,27 +187,18 @@ export function AtlasInspector(props: {
       </label>
       <label>
         Padding
-        <input
-          type="number"
-          min="0"
+        <DraftNumberInput
+          min={0}
           value={props.settings.padding}
-          onChange={(event) =>
-            props.dispatch({ type: "updateAtlasSettings", patch: { padding: Math.max(0, Number(event.target.value) || 0) } })
-          }
+          onCommit={(value) => props.dispatch({ type: "updateAtlasSettings", patch: { padding: value } })}
         />
       </label>
       <label>
         Extrusion
-        <input
-          type="number"
-          min="0"
+        <DraftNumberInput
+          min={0}
           value={props.settings.extrusion}
-          onChange={(event) =>
-            props.dispatch({
-              type: "updateAtlasSettings",
-              patch: { extrusion: Math.max(0, Number(event.target.value) || 0) },
-            })
-          }
+          onCommit={(value) => props.dispatch({ type: "updateAtlasSettings", patch: { extrusion: value } })}
         />
       </label>
       <label className="checkbox-row">
@@ -216,24 +252,18 @@ export function AtlasInspector(props: {
               <div className="inspector-row inspector-row-2">
                 <label>
                   Frame Width
-                  <input
-                    type="number"
-                    min="1"
+                  <DraftNumberInput
+                    min={1}
                     value={props.gridOptions.frameWidth}
-                    onChange={(event) =>
-                      props.onGridOptionsChange((current) => ({ ...current, frameWidth: Math.max(1, Number(event.target.value) || 1) }))
-                    }
+                    onCommit={(value) => props.onGridOptionsChange((current) => ({ ...current, frameWidth: value }))}
                   />
                 </label>
                 <label>
                   Frame Height
-                  <input
-                    type="number"
-                    min="1"
+                  <DraftNumberInput
+                    min={1}
                     value={props.gridOptions.frameHeight}
-                    onChange={(event) =>
-                      props.onGridOptionsChange((current) => ({ ...current, frameHeight: Math.max(1, Number(event.target.value) || 1) }))
-                    }
+                    onCommit={(value) => props.onGridOptionsChange((current) => ({ ...current, frameHeight: value }))}
                   />
                 </label>
               </div>
@@ -244,31 +274,31 @@ export function AtlasInspector(props: {
               <div className="inspector-row inspector-row-2">
                 <label>
                   Spacing X
-                  <input type="number" value={props.gridOptions.spacingX} onChange={(event) => props.onGridOptionsChange((current) => ({ ...current, spacingX: Math.max(0, Number(event.target.value) || 0) }))} />
+                  <DraftNumberInput value={props.gridOptions.spacingX} min={0} onCommit={(value) => props.onGridOptionsChange((current) => ({ ...current, spacingX: value }))} />
                 </label>
                 <label>
                   Spacing Y
-                  <input type="number" value={props.gridOptions.spacingY} onChange={(event) => props.onGridOptionsChange((current) => ({ ...current, spacingY: Math.max(0, Number(event.target.value) || 0) }))} />
+                  <DraftNumberInput value={props.gridOptions.spacingY} min={0} onCommit={(value) => props.onGridOptionsChange((current) => ({ ...current, spacingY: value }))} />
                 </label>
               </div>
               <div className="inspector-row inspector-row-2">
                 <label>
                   Margin X
-                  <input type="number" value={props.gridOptions.marginX} onChange={(event) => props.onGridOptionsChange((current) => ({ ...current, marginX: Math.max(0, Number(event.target.value) || 0) }))} />
+                  <DraftNumberInput value={props.gridOptions.marginX} min={0} onCommit={(value) => props.onGridOptionsChange((current) => ({ ...current, marginX: value }))} />
                 </label>
                 <label>
                   Margin Y
-                  <input type="number" value={props.gridOptions.marginY} onChange={(event) => props.onGridOptionsChange((current) => ({ ...current, marginY: Math.max(0, Number(event.target.value) || 0) }))} />
+                  <DraftNumberInput value={props.gridOptions.marginY} min={0} onCommit={(value) => props.onGridOptionsChange((current) => ({ ...current, marginY: value }))} />
                 </label>
               </div>
               <div className="inspector-row inspector-row-2">
                 <label>
                   End Offset X
-                  <input type="number" value={props.gridOptions.endOffsetX} onChange={(event) => props.onGridOptionsChange((current) => ({ ...current, endOffsetX: Math.max(0, Number(event.target.value) || 0) }))} />
+                  <DraftNumberInput value={props.gridOptions.endOffsetX} min={0} onCommit={(value) => props.onGridOptionsChange((current) => ({ ...current, endOffsetX: value }))} />
                 </label>
                 <label>
                   End Offset Y
-                  <input type="number" value={props.gridOptions.endOffsetY} onChange={(event) => props.onGridOptionsChange((current) => ({ ...current, endOffsetY: Math.max(0, Number(event.target.value) || 0) }))} />
+                  <DraftNumberInput value={props.gridOptions.endOffsetY} min={0} onCommit={(value) => props.onGridOptionsChange((current) => ({ ...current, endOffsetY: value }))} />
                 </label>
               </div>
               <label className="checkbox-row">
@@ -309,21 +339,21 @@ export function AtlasInspector(props: {
               <div className="inspector-row inspector-row-2">
                 <label>
                   X
-                  <input type="number" value={props.manualDraft.x} onChange={(event) => props.onManualDraftChange({ x: Math.max(0, Number(event.target.value) || 0) })} />
+                  <DraftNumberInput value={props.manualDraft.x} min={0} onCommit={(value) => props.onManualDraftChange({ x: value })} />
                 </label>
                 <label>
                   Y
-                  <input type="number" value={props.manualDraft.y} onChange={(event) => props.onManualDraftChange({ y: Math.max(0, Number(event.target.value) || 0) })} />
+                  <DraftNumberInput value={props.manualDraft.y} min={0} onCommit={(value) => props.onManualDraftChange({ y: value })} />
                 </label>
               </div>
               <div className="inspector-row inspector-row-2">
                 <label>
                   Width
-                  <input type="number" min="1" value={props.manualDraft.width} onChange={(event) => props.onManualDraftChange({ width: Math.max(1, Number(event.target.value) || 1) })} />
+                  <DraftNumberInput value={props.manualDraft.width} min={1} onCommit={(value) => props.onManualDraftChange({ width: value })} />
                 </label>
                 <label>
                   Height
-                  <input type="number" min="1" value={props.manualDraft.height} onChange={(event) => props.onManualDraftChange({ height: Math.max(1, Number(event.target.value) || 1) })} />
+                  <DraftNumberInput value={props.manualDraft.height} min={1} onCommit={(value) => props.onManualDraftChange({ height: value })} />
                 </label>
               </div>
               <div className="list-row static">
@@ -423,21 +453,21 @@ export function LevelInspector(props: {
       <div className="inspector-row inspector-row-2">
         <label>
           Parallax X
-          <input type="number" step="0.1" value={props.layer.parallaxX} onChange={(event) => update({ parallaxX: Number(event.target.value) || 0 })} />
+          <DraftNumberInput step={0.1} value={props.layer.parallaxX} onCommit={(value) => update({ parallaxX: value })} />
         </label>
         <label>
           Parallax Y
-          <input type="number" step="0.1" value={props.layer.parallaxY} onChange={(event) => update({ parallaxY: Number(event.target.value) || 0 })} />
+          <DraftNumberInput step={0.1} value={props.layer.parallaxY} onCommit={(value) => update({ parallaxY: value })} />
         </label>
       </div>
       <div className="inspector-row inspector-row-2">
         <label>
           Offset X
-          <input type="number" value={props.layer.offsetX} onChange={(event) => update({ offsetX: Number(event.target.value) || 0 })} />
+          <DraftNumberInput value={props.layer.offsetX} onCommit={(value) => update({ offsetX: value })} />
         </label>
         <label>
           Offset Y
-          <input type="number" value={props.layer.offsetY} onChange={(event) => update({ offsetY: Number(event.target.value) || 0 })} />
+          <DraftNumberInput value={props.layer.offsetY} onCommit={(value) => update({ offsetY: value })} />
         </label>
       </div>
       {props.layer.hasMarkers ? (
@@ -508,31 +538,31 @@ export function LevelSettingsInspector(props: {
       <div className="inspector-row inspector-row-2">
         <label>
           Map Width
-          <input type="number" min="1" value={props.level.mapWidthTiles} onChange={(event) => update({ mapWidthTiles: Math.max(1, Number(event.target.value) || 1) })} />
+          <DraftNumberInput value={props.level.mapWidthTiles} min={1} onCommit={(value) => update({ mapWidthTiles: value })} />
         </label>
         <label>
           Map Height
-          <input type="number" min="1" value={props.level.mapHeightTiles} onChange={(event) => update({ mapHeightTiles: Math.max(1, Number(event.target.value) || 1) })} />
+          <DraftNumberInput value={props.level.mapHeightTiles} min={1} onCommit={(value) => update({ mapHeightTiles: value })} />
         </label>
       </div>
       <div className="inspector-row inspector-row-2">
         <label>
           Tile Width
-          <input type="number" min="1" value={props.level.tileWidth} onChange={(event) => update({ tileWidth: Math.max(1, Number(event.target.value) || 1) })} />
+          <DraftNumberInput value={props.level.tileWidth} min={1} onCommit={(value) => update({ tileWidth: value })} />
         </label>
         <label>
           Tile Height
-          <input type="number" min="1" value={props.level.tileHeight} onChange={(event) => update({ tileHeight: Math.max(1, Number(event.target.value) || 1) })} />
+          <DraftNumberInput value={props.level.tileHeight} min={1} onCommit={(value) => update({ tileHeight: value })} />
         </label>
       </div>
       <div className="inspector-row inspector-row-2">
         <label>
           Chunk Width
-          <input type="number" min="1" value={props.level.chunkWidthTiles} onChange={(event) => update({ chunkWidthTiles: Math.max(1, Number(event.target.value) || 1) })} />
+          <DraftNumberInput value={props.level.chunkWidthTiles} min={1} onCommit={(value) => update({ chunkWidthTiles: value })} />
         </label>
         <label>
           Chunk Height
-          <input type="number" min="1" value={props.level.chunkHeightTiles} onChange={(event) => update({ chunkHeightTiles: Math.max(1, Number(event.target.value) || 1) })} />
+          <DraftNumberInput value={props.level.chunkHeightTiles} min={1} onCommit={(value) => update({ chunkHeightTiles: value })} />
         </label>
       </div>
       <div className="list-row static">

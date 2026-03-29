@@ -45,6 +45,7 @@ export function useAppShellController() {
   const [levelAssetTab, setLevelAssetTab] = useState<"slices" | "tiles" | "terrain">("tiles");
   const [recentTileIds, setRecentTileIds] = useState<number[]>([]);
   const [recentTerrainSetIds, setRecentTerrainSetIds] = useState<number[]>([]);
+  const [pinnedTileIds, setPinnedTileIds] = useState<number[]>([]);
   const [levelPan, setLevelPan] = useState({ x: 0, y: 0 });
   const [slicerPan, setSlicerPan] = useState({ x: 0, y: 0 });
   const [draggedSpriteIndex, setDraggedSpriteIndex] = useState<number | null>(null);
@@ -134,7 +135,21 @@ export function useAppShellController() {
   }, [dispatch, state.project]);
 
   useEffect(() => {
-    renderLevelCanvas(levelCanvasRef.current, state.project, level, layer, state.editor.levelZoom);
+    let cancelled = false;
+    const redraw = () => {
+      if (cancelled) {
+        return;
+      }
+      renderLevelCanvas(levelCanvasRef.current, state.project, level, layer, state.editor.levelZoom, () => {
+        requestAnimationFrame(redraw);
+      });
+    };
+    redraw();
+    const frameId = requestAnimationFrame(redraw);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
   }, [level, layer, state.project, state.editor.levelZoom]);
 
   useEffect(() => {
@@ -189,7 +204,10 @@ export function useAppShellController() {
         dispatch({ type: "undo" });
         return;
       }
-      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "x") {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        ((event.shiftKey && event.key.toLowerCase() === "z") || (!event.metaKey && event.key.toLowerCase() === "y"))
+      ) {
         event.preventDefault();
         dispatch({ type: "redo" });
         return;
@@ -201,6 +219,10 @@ export function useAppShellController() {
         if (event.key === "0") resetWorkspaceZoom();
       }
       if (state.editor.workspace === "level") {
+        if (event.key === "a") {
+          event.preventDefault();
+          setAssetTrayOpen((current) => !current);
+        }
         if (event.key === "v") dispatch({ type: "setLevelTool", tool: "select" });
         if (event.key === "b") dispatch({ type: "setLevelTool", tool: "brush" });
         if (event.key === "t") dispatch({ type: "setLevelTool", tool: "terrain" });
@@ -210,6 +232,19 @@ export function useAppShellController() {
         if (event.key === "h") dispatch({ type: "setLevelTool", tool: "hand" });
         if (event.key === "c") dispatch({ type: "setLevelTool", tool: "collisionRect" });
         if (event.key === "m") dispatch({ type: "setLevelTool", tool: event.shiftKey ? "markerRect" : "markerPoint" });
+        if (!event.metaKey && !event.ctrlKey && !event.altKey && /^[0-9]$/.test(event.key)) {
+          const quickPalette = [selectedPaintTileId, ...pinnedTileIds, ...recentTileIds]
+            .filter((tileId, index, list) => tileId && list.indexOf(tileId) === index)
+            .slice(0, 10);
+          const slotIndex = event.key === "0" ? 9 : Number(event.key) - 1;
+          const tileId = quickPalette[slotIndex];
+          if (tileId) {
+            event.preventDefault();
+            setSelectedPaintTileId(tileId);
+            pushRecentTile(tileId);
+            dispatch({ type: "setLevelTool", tool: "brush" });
+          }
+        }
       }
       if (state.editor.slicerMode === "manual" && state.editor.workspace === "atlas" && atlasModule === "slicer") {
         if (event.key === "v") {
@@ -242,17 +277,20 @@ export function useAppShellController() {
       }
     }
 
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
+    document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("keyup", onKeyUp, true);
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("keyup", onKeyUp, true);
     };
   }, [
     atlasManualRects,
     atlasModule,
     atlasSelectedManualRectIndex,
     dispatch,
+    pinnedTileIds,
+    recentTileIds,
+    selectedPaintTileId,
     selectedSourceImage,
     state.editor.levelZoom,
     state.editor.slicerMode,
@@ -289,16 +327,26 @@ export function useAppShellController() {
 
   useEffect(() => {
     const stage = levelStageRef.current;
-    if (!stage || !level) {
+    if (!stage || !level || state.editor.workspace !== "level") {
       return;
     }
-    requestAnimationFrame(() => {
+    const centerViewport = () => {
       setLevelPan({
         x: (stage.clientWidth - level.mapWidthTiles * level.tileWidth * state.editor.levelZoom) * 0.5,
         y: (stage.clientHeight - level.mapHeightTiles * level.tileHeight * state.editor.levelZoom) * 0.5,
       });
+    };
+    const initialFrame = requestAnimationFrame(() => {
+      centerViewport();
+      requestAnimationFrame(centerViewport);
     });
-  }, [level?.id, state.editor.levelZoom]);
+    const resizeObserver = new ResizeObserver(centerViewport);
+    resizeObserver.observe(stage);
+    return () => {
+      cancelAnimationFrame(initialFrame);
+      resizeObserver.disconnect();
+    };
+  }, [level?.id, state.editor.levelZoom, state.editor.workspace]);
 
   function setError(error: string | null) {
     dispatch({ type: "setError", error });
@@ -309,6 +357,25 @@ export function useAppShellController() {
       return;
     }
     setRecentTileIds((current) => [tileId, ...current.filter((entry) => entry !== tileId)].slice(0, 8));
+  }
+
+  function togglePinnedTile(tileId: number) {
+    if (!tileId) {
+      return;
+    }
+    setPinnedTileIds((current) =>
+      current.includes(tileId)
+        ? current.filter((entry) => entry !== tileId)
+        : [tileId, ...current.filter((entry) => entry !== tileId)].slice(0, 16),
+    );
+  }
+
+  function pinTileRegion(tileIds: number[]) {
+    const normalized = tileIds.filter(Boolean);
+    if (!normalized.length) {
+      return;
+    }
+    setPinnedTileIds((current) => [...normalized, ...current.filter((entry) => !normalized.includes(entry))].slice(0, 16));
   }
 
   function pushRecentTerrainSet(terrainSetId: number | null) {
@@ -565,6 +632,15 @@ export function useAppShellController() {
     if (!point) {
       return;
     }
+    if (event.altKey && layer.hasTiles) {
+      const pickedTileId = getTileAt(level, layer, point.x, point.y).tileId;
+      if (pickedTileId) {
+        setSelectedPaintTileId(pickedTileId);
+        pushRecentTile(pickedTileId);
+        dispatch({ type: "setLevelTool", tool: "brush" });
+      }
+      return;
+    }
     const paintTileId = selectedPaintTileId || tilePalette[0]?.tileId || 0;
     if (layer.hasTiles && state.editor.levelTool === "brush") {
       dispatch({ type: "updateLevel", level: paintTile(level, layer, point.x, point.y, paintTileId) });
@@ -814,6 +890,9 @@ export function useAppShellController() {
               : state.editor.levelTool === "rect"
                 ? "cursor-rect"
                 : "cursor-brush";
+  const quickPaletteTileIds = [selectedPaintTileId, ...pinnedTileIds, ...recentTileIds]
+    .filter((tileId, index, list) => tileId && list.indexOf(tileId) === index)
+    .slice(0, 10);
 
   return {
     state,
@@ -836,6 +915,8 @@ export function useAppShellController() {
     setLevelAssetTab,
     recentTileIds,
     recentTerrainSetIds,
+    pinnedTileIds,
+    quickPaletteTileIds,
     levelPan,
     slicerPan,
     atlasModule,
@@ -884,6 +965,8 @@ export function useAppShellController() {
     selectManualRect,
     pushRecentTile,
     pushRecentTerrainSet,
+    togglePinnedTile,
+    pinTileRegion,
     createExampleProject,
     createLevelLayer,
   };

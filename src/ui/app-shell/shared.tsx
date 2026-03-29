@@ -58,18 +58,25 @@ export function SliceAssetPreview({
 export function ToolButton({
   icon,
   label,
+  shortcut,
   active,
   onClick,
 }: {
   icon: string;
   label: string;
+  shortcut?: string;
   active: boolean;
   onClick: () => void;
 }) {
+  const tooltip = shortcut ? `${label} (${shortcut})` : label;
   return (
-    <button className={active ? "secondary active tool-button" : "ghost tool-button"} onClick={onClick} title={label}>
-      <span>{icon}</span>
-      <small>{label}</small>
+    <button
+      className={active ? "secondary active tool-button" : "ghost tool-button"}
+      onClick={onClick}
+      aria-label={tooltip}
+      data-tooltip={tooltip}
+    >
+      <span className="tool-button-icon">{icon}</span>
     </button>
   );
 }
