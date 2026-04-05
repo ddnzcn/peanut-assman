@@ -6,6 +6,7 @@ import {
 import { LevelNavigator } from "./app-shell/navigator";
 import { AtlasAssetsPanel, LevelAssetPicker } from "./app-shell/pickers";
 import { TileAssetPreview, ToolButton, ZoomControls } from "./app-shell/shared";
+import { AnimationWorkspace } from "./app-shell/timeline";
 import { useAppShellController } from "./app-shell/useAppShellController";
 import { AtlasWorkspace, LevelWorkspace } from "./app-shell/workspaces";
 
@@ -86,6 +87,8 @@ export function AppShell() {
     pinTileRegion,
     createExampleProject,
     createLevelLayer,
+    createAnimation,
+    handleAnimationTick,
   } = controller;
 
   return (
@@ -93,7 +96,7 @@ export function AppShell() {
       <header className="app-topbar panel">
         <span className="toolbar-kicker">Peanut Engine</span>
         <nav className="workspace-tabs">
-          {(["atlas", "level"] as const).map((workspace) => (
+          {(["atlas", "level", "animation"] as const).map((workspace) => (
             <button
               key={workspace}
               className={
@@ -108,7 +111,7 @@ export function AppShell() {
                 }
               }}
             >
-              {workspace === "atlas" ? "◎ Atlas" : "▤ Level"}
+              {workspace === "atlas" ? "◎ Atlas" : workspace === "level" ? "▤ Level" : "▷ Animation"}
             </button>
           ))}
         </nav>
@@ -206,6 +209,7 @@ export function AppShell() {
                 }
                 setDraggedSpriteIndex(null);
               }}
+              onRemoveSource={() => {}}
             />
           </aside>
         ) : null}
@@ -347,7 +351,7 @@ export function AppShell() {
         ) : null}
 
         <section
-          className={`panel workspace-panel ${state.editor.workspace}-workspace-panel ${state.editor.workspace === "level" ? "level-fullscreen" : ""}`}
+          className={`panel workspace-panel ${state.editor.workspace}-workspace-panel ${state.editor.workspace === "level" ? "level-fullscreen" : ""} ${state.editor.workspace === "animation" ? "animation-fullscreen" : ""}`}
         >
           {state.editor.workspace === "atlas" ? (
             <AtlasWorkspace
@@ -356,9 +360,9 @@ export function AppShell() {
               source={selectedSourceImage}
               gridOptions={atlasGridOptions}
               setGridOptions={setAtlasGridOptions}
-              gridPreview={atlasGridPreview}
-              manualRects={atlasManualRects}
-              selectedManualRectIndex={atlasSelectedManualRectIndex}
+              gridPreview={state.editor.slicerMode === "grid" ? atlasGridPreview : []}
+              manualRects={state.editor.slicerMode === "manual" ? atlasManualRects : []}
+              selectedManualRectIndex={state.editor.slicerMode === "manual" ? atlasSelectedManualRectIndex : null}
               slicerCanvasTool={slicerCanvasTool}
               manualKind={atlasManualKind}
               manualDraft={atlasManualDraft}
@@ -383,6 +387,29 @@ export function AppShell() {
               }
               onCanvasPointerUp={() => onSlicerPointerUp("atlas")}
               onManualRectSelect={selectManualRect}
+              packZoom={1}
+              packPan={{ x: 0, y: 0 }}
+              packStageRef={{ current: null }}
+              onPackWheel={() => {}}
+              onPackPanStart={() => {}}
+              onPackPanMove={() => {}}
+              onPackPanEnd={() => {}}
+            />
+          ) : state.editor.workspace === "animation" ? (
+            <AnimationWorkspace
+              project={state.project}
+              animations={state.project.spriteAnimations}
+              selectedAnimationId={state.editor.selectedSpriteAnimationId}
+              currentFrame={state.editor.animCurrentFrame}
+              isPlaying={state.editor.animIsPlaying}
+              onSelectAnimation={(id) => dispatch({ type: "setSelectedSpriteAnimation", animationId: id })}
+              onCreateAnimation={createAnimation}
+              onRemoveAnimation={(id) => dispatch({ type: "removeSpriteAnimation", animationId: id })}
+              onUpdateAnimation={(anim) => dispatch({ type: "upsertSpriteAnimation", animation: anim })}
+              onSelectFrame={(frame) => dispatch({ type: "setAnimFrame", frame })}
+              onTogglePlay={() => dispatch({ type: "setAnimPlaying", playing: !state.editor.animIsPlaying })}
+              onStop={() => dispatch({ type: "setAnimPlaying", playing: false })}
+              onTick={handleAnimationTick}
             />
           ) : (
             <LevelWorkspace
@@ -392,6 +419,8 @@ export function AppShell() {
               levelCanvasRef={levelCanvasRef}
               stageRef={levelStageRef}
               cursorClass={levelCursorClass}
+              rectDragStart={controller.rectDragStart}
+              rectDragCurrent={controller.rectDragCurrent}
               onCanvasPointerDown={handleLevelPointerDown}
               onCanvasPointerMove={handleLevelPointerMove}
               onCanvasPointerUp={handleLevelPointerUp}
@@ -403,7 +432,7 @@ export function AppShell() {
           )}
         </section>
 
-        <aside className="panel inspector-panel">
+        {state.editor.workspace !== "animation" && <aside className="panel inspector-panel">
           <div className="panel-header">
             <h2>Inspector</h2>
             <span>{state.editor.workspace}</span>
@@ -511,7 +540,7 @@ export function AppShell() {
               />
             )
           ) : null}
-        </aside>
+        </aside>}
       </section>
 
       {state.editor.workspace === "level" && assetTrayOpen ? (
@@ -596,11 +625,34 @@ export function AppShell() {
           onUpdateTerrainSet={(terrainSet) =>
             dispatch({ type: "upsertTerrainSet", terrainSet })
           }
+          selectedAnimatedTileId={state.editor.selectedAnimatedTileId}
+          animatedTiles={state.project.animatedTiles}
+          onSelectAnimatedTile={(id) =>
+            dispatch({ type: "setSelectedAnimatedTile", animatedTileId: id })
+          }
+          onCreateAnimatedTile={() => {
+            const id = state.project.idCounters.animatedTile;
+            dispatch({
+              type: "upsertAnimatedTile",
+              animatedTile: {
+                id,
+                name: `anim_tile_${String(id).padStart(2, "0")}`,
+                baseTileId: selectedPaintTileId || effectiveLevelTileIds[0] || 0,
+                frames: [],
+              },
+            });
+          }}
+          onRemoveAnimatedTile={(id) =>
+            dispatch({ type: "removeAnimatedTile", animatedTileId: id })
+          }
+          onUpdateAnimatedTile={(animatedTile) =>
+            dispatch({ type: "upsertAnimatedTile", animatedTile })
+          }
         />
       ) : null}
 
-      <section className="panel bottom-dock">
-        {state.editor.workspace !== "atlas" ? (
+      {state.editor.workspace !== "animation" ? <section className="panel bottom-dock">
+        {state.editor.workspace === "level" ? (
           <button
             className={
               assetTrayOpen
@@ -613,11 +665,7 @@ export function AppShell() {
           >
             <span className="dock-assets-icon">◫</span>
           </button>
-        ) : (
-          <div className="dock-label">
-            Atlas assets stay visible for ordering.
-          </div>
-        )}
+        ) : null}
         {state.editor.workspace === "level" ? (
           <>
             <div className="dock-group dock-group-history">
@@ -816,7 +864,7 @@ export function AppShell() {
             />
           </>
         ) : null}
-      </section>
+      </section> : null}
     </main>
   );
 }

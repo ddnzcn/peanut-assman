@@ -1557,6 +1557,435 @@ select {
   color: var(--text-muted);
 }
 
+/* ── Animation Workspace ─────────────────────────────────── */
+
+.workspace-panel.animation-fullscreen {
+  grid-column: 1 / -1;
+  padding: 0;
+}
+
+.anim-workspace {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 280px;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Left: animation list */
+.anim-list-panel {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.anim-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.anim-add-btn {
+  font-size: 1.2rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  line-height: 1;
+}
+
+.anim-list-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.anim-list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.8rem;
+}
+
+.anim-list-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.anim-list-item.active {
+  background: rgba(88, 171, 255, 0.15);
+  color: var(--accent);
+}
+
+.anim-list-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.anim-list-frames {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+
+.anim-list-remove {
+  opacity: 0;
+  font-size: 0.7rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.anim-list-item:hover .anim-list-remove {
+  opacity: 1;
+}
+
+.anim-list-empty {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+}
+
+/* Center: viewport + controls + strip */
+.anim-center {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.anim-workspace-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.anim-viewport {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  background: #0d1216;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  min-height: 120px;
+}
+
+.anim-viewport-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.anim-viewport-empty {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.anim-viewport-sprite {
+  image-rendering: pixelated;
+  background-repeat: no-repeat;
+}
+
+.anim-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.anim-ctrl-btn {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  font-size: 0.85rem;
+}
+
+.anim-ctrl-btn.active {
+  color: var(--accent);
+}
+
+.anim-ctrl-info,
+.anim-ctrl-duration {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.anim-ctrl-spacer {
+  flex: 1;
+}
+
+.anim-name-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.anim-name-input {
+  width: 120px;
+  font-size: 0.8rem;
+  padding: 0.2rem 0.4rem;
+  height: 1.8rem;
+}
+
+.anim-loop-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.anim-strip-area {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+}
+
+.anim-selected-frame-hint {
+  padding: 0.2rem 0.75rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: rgba(88, 171, 255, 0.05);
+  border-bottom: 1px solid var(--border);
+}
+
+.anim-strip {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.5rem;
+  overflow-x: auto;
+  height: 96px;
+  align-items: flex-start;
+}
+
+.anim-strip-empty {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  height: 100%;
+  padding: 0 0.5rem;
+}
+
+/* Frame thumb */
+.anim-frame-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 0.45rem;
+  padding: 0.2rem;
+  flex-shrink: 0;
+  width: 64px;
+}
+
+.anim-frame-thumb:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.anim-frame-thumb.selected {
+  border-color: var(--accent);
+  background: rgba(88, 171, 255, 0.1);
+}
+
+.anim-frame-preview {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  background: #0d1216;
+  border-radius: 0.3rem;
+  overflow: hidden;
+}
+
+.anim-frame-remove {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  font-size: 0.55rem;
+  opacity: 0;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 50%;
+}
+
+.anim-frame-thumb:hover .anim-frame-remove {
+  opacity: 1;
+}
+
+.anim-frame-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-top: 0.15rem;
+  width: 100%;
+  justify-content: center;
+}
+
+.anim-frame-index {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.anim-frame-duration {
+  font-size: 0.62rem;
+  padding: 0.05rem 0.2rem;
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+}
+
+.anim-frame-duration-input {
+  width: 52px;
+  font-size: 0.65rem;
+  padding: 0.1rem 0.2rem;
+  height: 1.4rem;
+}
+
+/* Right: slice picker grid */
+.anim-picker-panel {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.anim-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.anim-picker-search {
+  flex: 1;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.4rem;
+  height: 1.8rem;
+}
+
+.anim-picker-hint {
+  padding: 0.2rem 0.75rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.anim-slice-grid {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 2px;
+  padding: 0.4rem;
+}
+
+.anim-slice-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.3rem;
+  border-radius: 0.4rem;
+  cursor: pointer;
+  border: 1px solid transparent;
+  width: 72px;
+  background: transparent;
+  color: inherit;
+}
+
+.anim-slice-cell:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.anim-slice-cell.active {
+  border-color: var(--accent);
+  background: rgba(88, 171, 255, 0.12);
+}
+
+.anim-slice-cell-img {
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+
+.anim-slice-cell-empty {
+  width: 48px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 0.3rem;
+}
+
+.anim-slice-cell-name {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.anim-picker-empty {
+  width: 100%;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  padding: 0.75rem;
+  text-align: center;
+}
+
+/* ── Animated Tile Workspace (inside level asset tray) ───── */
+
+.anim-tile-workspace {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) 220px;
+  height: 280px;
+  overflow: hidden;
+}
+
+/* Enlarge the asset tray when the animated tile workspace is active */
+.asset-tray:has(.anim-tile-workspace) {
+  max-height: min(55vh, 500px);
+  overflow: hidden;
+}
+
+/* Compact viewport inside the tile workspace */
+.anim-tile-workspace .anim-viewport {
+  min-height: 80px;
+}
+
 @media (max-width: 1200px) {
   .main-layout {
     grid-template-columns: 208px minmax(0, 1fr) 280px;

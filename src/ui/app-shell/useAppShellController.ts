@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { getFrameAtTime as getAnimFrameAtTime } from "../../animation/playback";
 import { buildProjectJsonBlob, exportLevelDebugJson, exportTilemapBin, loadProjectFromFile } from "../../export";
 import { createGridSlices, createManualSlices, createSourceSlicesFromImages, fileToSourceImageAsset, previewGridSlices } from "../../image";
-import { addCollision, addMarker, bucketFill, buildMarker, fillRect, getTileAt, paintTile } from "../../level/editor";
+import { addCollision, addMarker, bucketFill, buildMarker, fillRect, getTileAt, paintBrush, paintTile, sampleBrushFromLevel } from "../../level/editor";
 import { createExampleProject } from "../../model/exampleProject";
 import { createLevelLayer } from "../../model/project";
 import { buildAtlasFromProject, getEffectiveLevelTileIds, getSelectedLayer, getSelectedLevel, getSelectedTerrainSet } from "../../model/selectors";
@@ -12,6 +13,7 @@ import type {
   GridSliceOptions,
   LevelDocument,
   LevelLayer,
+  LevelPickerTab,
   ManualSliceRect,
   MarkerObject,
   PackedAtlas,
@@ -21,7 +23,7 @@ import type {
   TerrainSet,
   TilesetTileAsset,
 } from "../../types";
-import { clamp, fileNameBase, saveBlobWithPicker } from "../../utils";
+import { clamp, fileNameBase, fnv1a32, saveBlobWithPicker } from "../../utils";
 import { DEFAULT_ATLAS_GRID, DEFAULT_MANUAL_RECT, type SlicerCanvasTool } from "./constants";
 import { getCanvasTile, getImagePoint, normalizeRect, pointInRect, renderLevelCanvas } from "./canvas";
 
@@ -42,12 +44,15 @@ export function useAppShellController() {
   const [assetTrayOpen, setAssetTrayOpen] = useState(false);
   const [selectedPaintTileId, setSelectedPaintTileId] = useState(0);
   const [assetSearch, setAssetSearch] = useState("");
-  const [levelAssetTab, setLevelAssetTab] = useState<"slices" | "tiles" | "terrain">("tiles");
+  const levelAssetTab = state.editor.levelPickerTab;
+  const setLevelAssetTab = (tab: typeof levelAssetTab) => dispatch({ type: "setLevelPickerTab", tab });
   const [recentTileIds, setRecentTileIds] = useState<number[]>([]);
   const [recentTerrainSetIds, setRecentTerrainSetIds] = useState<number[]>([]);
   const [pinnedTileIds, setPinnedTileIds] = useState<number[]>([]);
   const [levelPan, setLevelPan] = useState({ x: 0, y: 0 });
   const [slicerPan, setSlicerPan] = useState({ x: 0, y: 0 });
+  const [packPan, setPackPan] = useState({ x: 0, y: 0 });
+  const [packZoom, setPackZoom] = useState(1);
   const [draggedSpriteIndex, setDraggedSpriteIndex] = useState<number | null>(null);
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [atlasModule, setAtlasModule] = useState<"pack" | "slicer">("pack");
@@ -58,12 +63,18 @@ export function useAppShellController() {
   const [atlasSelectedManualRectIndex, setAtlasSelectedManualRectIndex] = useState<number | null>(null);
   const [slicerCanvasTool, setSlicerCanvasTool] = useState<SlicerCanvasTool>("draw");
   const [dragRect, setDragRect] = useState<SliceRect | null>(null);
+  const [levelSelection, setLevelSelection] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [rectDragCurrent, setRectDragCurrent] = useState<{ x: number; y: number } | null>(null);
   const [moveStart, setMoveStart] = useState<{ x: number; y: number } | null>(null);
   const [moveOrigin, setMoveOrigin] = useState<ManualSliceRect | null>(null);
 
+  const strokeBaseRef = useRef<LevelDocument | null>(null);
+  const strokeInProgressRef = useRef(false);
+
   const atlasCanvasRef = useRef<HTMLDivElement | null>(null);
   const atlasStageRef = useRef<HTMLDivElement | null>(null);
+  const atlasPackStageRef = useRef<HTMLDivElement | null>(null);
   const levelStageRef = useRef<HTMLDivElement | null>(null);
   const levelCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const panRef = useRef<{
@@ -73,6 +84,16 @@ export function useAppShellController() {
     startPanY: number;
     workspace: "level" | "slicer";
   } | null>(null);
+  const packPanRef = useRef<{ startX: number; startY: number; startPanX: number; startPanY: number } | null>(null);
+
+  // Animation playback time (ref — not in store to avoid re-renders on every frame)
+  const animPlaybackTimeRef = useRef<number>(0);
+  // Level canvas animated-tile time (separate RAF from sprite anim preview)
+  const levelAnimRafRef = useRef<number | null>(null);
+  const levelAnimStartRef = useRef<number | null>(null);
+  const levelAnimTimeRef = useRef<number>(0);
+  // Always-current render state for the animated-tile RAF loop (avoids stale closures)
+  const levelRenderStateRef = useRef({ project: state.project, level, layer, zoom: state.editor.levelZoom });
 
   const atlasSprites = useMemo(
     () =>
@@ -132,15 +153,32 @@ export function useAppShellController() {
     return () => {
       cancelled = true;
     };
-  }, [dispatch, state.project]);
+  // Only the atlas-relevant fields are listed — level chunk edits must not
+  // trigger a full atlas rebuild (image decoding + sprite packing is expensive).
+  }, [
+    dispatch,
+    state.project.sourceImages,
+    state.project.slices,
+    state.project.sprites,
+    state.project.tiles,
+    state.project.tilesets,
+    state.project.terrainSets,
+    state.project.spriteAnimations,
+    state.project.animatedTiles,
+    state.project.atlasSettings,
+  ]);
 
   useEffect(() => {
+    // Skip static render when the animated-tile RAF loop is driving the canvas
+    if ((state.project.animatedTiles?.length ?? 0) > 0 && state.editor.workspace === "level") {
+      return;
+    }
     let cancelled = false;
     const redraw = () => {
       if (cancelled) {
         return;
       }
-      renderLevelCanvas(levelCanvasRef.current, state.project, level, layer, state.editor.levelZoom, () => {
+      renderLevelCanvas(levelCanvasRef.current, state.project, level, layer, state.editor.levelZoom, undefined, () => {
         requestAnimationFrame(redraw);
       });
     };
@@ -150,7 +188,7 @@ export function useAppShellController() {
       cancelled = true;
       cancelAnimationFrame(frameId);
     };
-  }, [level, layer, state.project, state.editor.levelZoom]);
+  }, [level, layer, state.project, state.editor.levelZoom, state.editor.workspace]);
 
   useEffect(() => {
     if (!tilePalette.length) {
@@ -159,10 +197,14 @@ export function useAppShellController() {
       }
       return;
     }
-    if (!tilePalette.some((tile) => tile.tileId === selectedPaintTileId)) {
+    const animatedBaseIds = new Set((state.project.animatedTiles ?? []).map((a) => a.baseTileId));
+    if (
+      !tilePalette.some((tile) => tile.tileId === selectedPaintTileId) &&
+      !animatedBaseIds.has(selectedPaintTileId)
+    ) {
       setSelectedPaintTileId(tilePalette[0].tileId);
     }
-  }, [selectedPaintTileId, tilePalette]);
+  }, [selectedPaintTileId, tilePalette, state.project.animatedTiles]);
 
   function zoomWorkspace(delta: number) {
     if (state.editor.workspace === "level") {
@@ -445,16 +487,18 @@ export function useAppShellController() {
         dispatch({ type: "removeSlicesFromAtlas", sliceIds: fullSourceSliceIds });
       }
       dispatch({ type: "addSlices", slices: result.slices });
+      // Only clear manual state when applying manual slices
+      setAtlasManualRects([]);
+      setAtlasManualDraft(DEFAULT_MANUAL_RECT);
+      setAtlasSelectedManualRectIndex(null);
     } else {
       const result = await createGridSlices(selectedSourceImage, atlasGridOptions, state.project.idCounters.slice);
       if (fullSourceSliceIds.length) {
         dispatch({ type: "removeSlicesFromAtlas", sliceIds: fullSourceSliceIds });
       }
       dispatch({ type: "addSlices", slices: result.slices });
+      // Grid state (atlasGridOptions) is kept so you can re-apply with different settings
     }
-    setAtlasManualRects([]);
-    setAtlasManualDraft(DEFAULT_MANUAL_RECT);
-    setAtlasSelectedManualRectIndex(null);
   }
 
   function addSelectedSlicesToAtlas() {
@@ -625,7 +669,7 @@ export function useAppShellController() {
   }
 
   function handleLevelPointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
-    if (!level || !layer || spaceHeld || state.editor.levelTool === "hand") {
+    if (!level || !layer || spaceHeld || state.editor.levelTool === "hand" || event.button === 1) {
       return;
     }
     const point = getCanvasTile(event, levelCanvasRef.current, level, state.editor.levelZoom);
@@ -642,14 +686,27 @@ export function useAppShellController() {
       return;
     }
     const paintTileId = selectedPaintTileId || tilePalette[0]?.tileId || 0;
+    const activeBrush = (state.editor.savedBrushes ?? []).find((b) => b.id === state.editor.activeBrushId) ?? null;
     if (layer.hasTiles && state.editor.levelTool === "brush") {
-      dispatch({ type: "updateLevel", level: paintTile(level, layer, point.x, point.y, paintTileId) });
+      strokeBaseRef.current = level;
+      strokeInProgressRef.current = true;
+      const next = activeBrush
+        ? paintBrush(level, layer, point.x, point.y, activeBrush)
+        : paintTile(level, layer, point.x, point.y, paintTileId);
+      dispatch({ type: "updateLevelSilent", level: next });
     } else if (layer.hasTiles && state.editor.levelTool === "terrain" && selectedTerrainSet) {
-      dispatch({ type: "updateLevel", level: applyTerrainBrush(level, layer, point.x, point.y, selectedTerrainSet) });
+      strokeBaseRef.current = level;
+      strokeInProgressRef.current = true;
+      dispatch({ type: "updateLevelSilent", level: applyTerrainBrush(level, layer, point.x, point.y, selectedTerrainSet) });
     } else if (layer.hasTiles && state.editor.levelTool === "erase") {
-      dispatch({ type: "updateLevel", level: paintTile(level, layer, point.x, point.y, 0) });
+      strokeBaseRef.current = level;
+      strokeInProgressRef.current = true;
+      dispatch({ type: "updateLevelSilent", level: paintTile(level, layer, point.x, point.y, 0) });
     } else if (layer.hasTiles && state.editor.levelTool === "bucket") {
       dispatch({ type: "updateLevel", level: bucketFill(level, layer, point.x, point.y, paintTileId) });
+    } else if (layer.hasTiles && state.editor.levelTool === "select") {
+      setDragStart(point);
+      setLevelSelection(null);
     } else if (layer.hasTiles && state.editor.levelTool === "rect") {
       setDragStart(point);
     } else if (layer.hasCollision && state.editor.levelTool === "collisionRect") {
@@ -689,19 +746,33 @@ export function useAppShellController() {
       return;
     }
     const paintTileId = selectedPaintTileId || tilePalette[0]?.tileId || 0;
+    const activeBrushMove = (state.editor.savedBrushes ?? []).find((b) => b.id === state.editor.activeBrushId) ?? null;
     if (state.editor.levelTool === "brush" && event.buttons === 1) {
-      dispatch({ type: "updateLevel", level: paintTile(level, layer, point.x, point.y, paintTileId) });
+      const next = activeBrushMove
+        ? paintBrush(level, layer, point.x, point.y, activeBrushMove)
+        : paintTile(level, layer, point.x, point.y, paintTileId);
+      dispatch({ type: "updateLevelSilent", level: next });
     }
     if (state.editor.levelTool === "terrain" && event.buttons === 1 && selectedTerrainSet) {
-      dispatch({ type: "updateLevel", level: applyTerrainBrush(level, layer, point.x, point.y, selectedTerrainSet) });
+      dispatch({ type: "updateLevelSilent", level: applyTerrainBrush(level, layer, point.x, point.y, selectedTerrainSet) });
     }
     if (state.editor.levelTool === "erase" && event.buttons === 1) {
-      dispatch({ type: "updateLevel", level: paintTile(level, layer, point.x, point.y, 0) });
+      dispatch({ type: "updateLevelSilent", level: paintTile(level, layer, point.x, point.y, 0) });
+    }
+    if (state.editor.levelTool === "rect" || state.editor.levelTool === "select") {
+      setRectDragCurrent(point);
     }
   }
 
   function handleLevelPointerUp(event: ReactPointerEvent<HTMLCanvasElement>) {
-    if (!level || !layer || !dragStart || !layer.hasTiles || state.editor.levelTool !== "rect") {
+    // Commit any in-progress stroke as a single undo entry
+    if (strokeInProgressRef.current && strokeBaseRef.current && level) {
+      dispatch({ type: "commitLevelStroke", baseLevel: strokeBaseRef.current, currentLevel: level });
+      strokeInProgressRef.current = false;
+      strokeBaseRef.current = null;
+    }
+
+    if (!level || !layer || !dragStart || !layer.hasTiles) {
       setDragStart(null);
       return;
     }
@@ -710,9 +781,20 @@ export function useAppShellController() {
       setDragStart(null);
       return;
     }
+    if (state.editor.levelTool === "select") {
+      setLevelSelection({ x0: dragStart.x, y0: dragStart.y, x1: point.x, y1: point.y });
+      setDragStart(null);
+      setRectDragCurrent(null);
+      return;
+    }
+    if (state.editor.levelTool !== "rect") {
+      setDragStart(null);
+      return;
+    }
     const paintTileId = selectedPaintTileId || tilePalette[0]?.tileId || 0;
     dispatch({ type: "updateLevel", level: fillRect(level, layer, dragStart.x, dragStart.y, point.x, point.y, paintTileId) });
     setDragStart(null);
+    setRectDragCurrent(null);
   }
 
   function addManualRect(target: ManualTarget) {
@@ -814,15 +896,28 @@ export function useAppShellController() {
   }
 
   function handleWheelZoom(event: ReactWheelEvent<HTMLDivElement>, workspace: "level" | "slicer") {
-    if (!(event.metaKey || event.ctrlKey)) {
-      return;
-    }
     event.preventDefault();
     const currentZoom = workspace === "level" ? state.editor.levelZoom : state.editor.slicerZoom;
+    // Ctrl/Meta held → zoom; plain scroll → fine-grained pan (1/3 speed for plain scroll)
+    if (!(event.metaKey || event.ctrlKey) && event.deltaMode === 0 && Math.abs(event.deltaX) < 1) {
+      // Plain vertical scroll — pan instead of zoom
+      const dx = event.shiftKey ? -event.deltaY : 0;
+      const dy = event.shiftKey ? 0 : -event.deltaY;
+      if (workspace === "level") {
+        setLevelPan((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+      } else {
+        setSlicerPan((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+      }
+      return;
+    }
     const nextZoom = clamp(currentZoom * Math.exp(-event.deltaY * 0.0025), workspace === "level" ? 0.5 : 0.25, 8);
     const bounds = event.currentTarget.getBoundingClientRect();
-    const pointerX = event.clientX - bounds.left;
-    const pointerY = event.clientY - bounds.top;
+    // Subtract padding so pointer position is relative to the inner canvas area (not the stage border)
+    const style = window.getComputedStyle(event.currentTarget);
+    const paddingLeft = parseFloat(style.paddingLeft) || 0;
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const pointerX = event.clientX - bounds.left - paddingLeft;
+    const pointerY = event.clientY - bounds.top - paddingTop;
     if (workspace === "level") {
       const worldX = (pointerX - levelPan.x) / currentZoom;
       const worldY = (pointerY - levelPan.y) / currentZoom;
@@ -837,11 +932,14 @@ export function useAppShellController() {
   }
 
   function handlePanStart(event: ReactPointerEvent<HTMLDivElement>, workspace: "level" | "slicer", requiresHandTool: boolean) {
-    if (requiresHandTool && !spaceHeld && state.editor.levelTool !== "hand") {
-      return;
-    }
-    if (!requiresHandTool && !spaceHeld) {
-      return;
+    const isMiddleMouse = event.button === 1;
+    if (!isMiddleMouse) {
+      if (requiresHandTool && !spaceHeld && state.editor.levelTool !== "hand") {
+        return;
+      }
+      if (!requiresHandTool && !spaceHeld) {
+        return;
+      }
     }
     panRef.current = {
       startX: event.clientX,
@@ -875,6 +973,96 @@ export function useAppShellController() {
     event.currentTarget.releasePointerCapture(event.pointerId);
     panRef.current = null;
   }
+
+  function handlePackWheelZoom(event: ReactWheelEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const nextZoom = clamp(packZoom * Math.exp(-event.deltaY * 0.0025), 0.25, 8);
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const style = window.getComputedStyle(event.currentTarget);
+    const paddingLeft = parseFloat(style.paddingLeft) || 0;
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const pointerX = event.clientX - bounds.left - paddingLeft;
+    const pointerY = event.clientY - bounds.top - paddingTop;
+    const worldX = (pointerX - packPan.x) / packZoom;
+    const worldY = (pointerY - packPan.y) / packZoom;
+    setPackPan({ x: pointerX - worldX * nextZoom, y: pointerY - worldY * nextZoom });
+    setPackZoom(nextZoom);
+  }
+
+  function handlePackPanStart(event: ReactPointerEvent<HTMLDivElement>) {
+    packPanRef.current = { startX: event.clientX, startY: event.clientY, startPanX: packPan.x, startPanY: packPan.y };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePackPanMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!packPanRef.current) return;
+    setPackPan({
+      x: packPanRef.current.startPanX + (event.clientX - packPanRef.current.startX),
+      y: packPanRef.current.startPanY + (event.clientY - packPanRef.current.startY),
+    });
+  }
+
+  function handlePackPanEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!packPanRef.current) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    packPanRef.current = null;
+  }
+
+  // --- Animation handlers ---
+  function createAnimation() {
+    const id = state.project.idCounters.spriteAnimation;
+    const name = `anim_${String(id).padStart(2, "0")}`;
+    dispatch({
+      type: "upsertSpriteAnimation",
+      animation: { id, name, nameHash: fnv1a32(name), loop: true, frames: [] },
+    });
+  }
+
+  function handleAnimationTick(timeMs: number) {
+    animPlaybackTimeRef.current = timeMs;
+    const anim = state.project.spriteAnimations.find((a) => a.id === state.editor.selectedSpriteAnimationId);
+    if (!anim || !anim.frames.length) return;
+    const frame = getAnimFrameAtTime(anim.frames, timeMs, anim.loop);
+    if (frame !== state.editor.animCurrentFrame) {
+      dispatch({ type: "setAnimFrame", frame });
+    }
+  }
+
+  // Level canvas animated-tile RAF loop — runs only when animated tiles exist in level workspace
+  useEffect(() => {
+    levelRenderStateRef.current = { project: state.project, level, layer, zoom: state.editor.levelZoom };
+  }, [state.project, level, layer, state.editor.levelZoom]);
+
+  useEffect(() => {
+    const hasAnimatedTiles = (state.project.animatedTiles?.length ?? 0) > 0;
+    const isLevel = state.editor.workspace === "level";
+    if (!hasAnimatedTiles || !isLevel) {
+      if (levelAnimRafRef.current !== null) {
+        cancelAnimationFrame(levelAnimRafRef.current);
+        levelAnimRafRef.current = null;
+        levelAnimStartRef.current = null;
+      }
+      return;
+    }
+
+    const tick = (now: number) => {
+      if (levelAnimStartRef.current === null) levelAnimStartRef.current = now;
+      levelAnimTimeRef.current = now - levelAnimStartRef.current;
+      const { project, level: l, layer: la, zoom } = levelRenderStateRef.current;
+      renderLevelCanvas(levelCanvasRef.current, project, l, la, zoom, levelAnimTimeRef.current);
+      levelAnimRafRef.current = requestAnimationFrame(tick);
+    };
+    levelAnimRafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (levelAnimRafRef.current !== null) {
+        cancelAnimationFrame(levelAnimRafRef.current);
+        levelAnimRafRef.current = null;
+        levelAnimStartRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(state.project.animatedTiles?.length ?? 0), state.editor.workspace]);
 
   const levelCursorClass =
     state.editor.levelTool === "hand"
@@ -919,6 +1107,9 @@ export function useAppShellController() {
     quickPaletteTileIds,
     levelPan,
     slicerPan,
+    packPan,
+    packZoom,
+    atlasPackStageRef,
     atlasModule,
     setAtlasModule,
     draggedSpriteIndex,
@@ -954,12 +1145,18 @@ export function useAppShellController() {
     handlePanStart,
     handlePanMove,
     handlePanEnd,
+    handlePackWheelZoom,
+    handlePackPanStart,
+    handlePackPanMove,
+    handlePackPanEnd,
     onSlicerPointerDown,
     onSlicerPointerMove,
     onSlicerPointerUp,
     handleLevelPointerDown,
     handleLevelPointerMove,
     handleLevelPointerUp,
+    rectDragStart: dragStart,
+    rectDragCurrent,
     updateManualRect,
     removeManualRect,
     selectManualRect,
@@ -969,5 +1166,10 @@ export function useAppShellController() {
     pinTileRegion,
     createExampleProject,
     createLevelLayer,
+    createAnimation,
+    handleAnimationTick,
+    levelAnimTimeRef,
+    levelSelection,
+    setLevelSelection,
   };
 }

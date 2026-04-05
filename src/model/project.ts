@@ -10,7 +10,7 @@ import type {
 
 export const DEFAULT_ATLAS_OPTIONS: BuildOptions = {
   maxPageSize: 1024,
-  allowRotation: false,
+  allowRotation: true,
   padding: 2,
   extrusion: 2,
   includeHashTable: true,
@@ -30,12 +30,17 @@ export const DEFAULT_EDITOR_STATE: EditorState = {
   selectedSliceIds: [],
   selectedTilesetId: null,
   selectedTerrainSetId: null,
+  selectedSpriteAnimationId: null,
+  selectedAnimatedTileId: null,
+  animCurrentFrame: 0,
+  animIsPlaying: false,
   selectedLevelId: "level-1",
   selectedLayerId: "layer-1",
   selectedCollisionId: null,
   selectedMarkerId: null,
   atlasHoveredSpriteId: null,
   levelTool: "brush",
+  levelPickerTab: "tiles",
   gridVisible: true,
   chunkOverlayVisible: true,
   cullingOverlayVisible: true,
@@ -45,6 +50,9 @@ export const DEFAULT_EDITOR_STATE: EditorState = {
   slicerZoom: 1,
   slicerMode: "grid",
   tilesetDraft: DEFAULT_TILESET_DRAFT,
+  savedBrushes: [],
+  activeBrushId: null,
+  nextBrushId: 1,
 };
 
 export function createDefaultIdCounters(): IdCounters {
@@ -59,6 +67,8 @@ export function createDefaultIdCounters(): IdCounters {
     collision: 1,
     marker: 1,
     terrainSet: 1,
+    spriteAnimation: 1,
+    animatedTile: 1,
   };
 }
 
@@ -122,6 +132,8 @@ export function createEmptyProject(): ProjectDocument {
     tiles: [],
     tilesets: [],
     terrainSets: [],
+    spriteAnimations: [],
+    animatedTiles: [],
     levels: [createDefaultLevel()],
     atlasSettings: DEFAULT_ATLAS_OPTIONS,
     idCounters: createDefaultIdCounters(),

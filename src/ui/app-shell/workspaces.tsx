@@ -107,10 +107,17 @@ export function AtlasWorkspace(props: {
   dragRect: SliceRect | null;
   slicerZoom: number;
   slicerPan: { x: number; y: number };
+  packZoom: number;
+  packPan: { x: number; y: number };
+  packStageRef: RefObject<HTMLDivElement>;
   canvasRef: RefObject<HTMLDivElement>;
   stageRef: RefObject<HTMLDivElement>;
   onCreateSlices: () => void;
   onWheel: (event: ReactWheelEvent<HTMLDivElement>) => void;
+  onPackWheel: (event: ReactWheelEvent<HTMLDivElement>) => void;
+  onPackPanStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPackPanMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPackPanEnd: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStagePanStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStagePanMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStagePanEnd: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -122,23 +129,41 @@ export function AtlasWorkspace(props: {
   return (
     <div className="workspace-content level-workspace">
       {props.module === "pack" ? (
-        <div className="atlas-pack-stage viewport-stage">
-          <div className="atlas-pages">
-            {props.atlas?.pages.length ? (
-              props.atlas.pages.map((page) => (
-                <article className="atlas-page-card" key={page.index}>
-                  <div className="atlas-page-preview" style={{ aspectRatio: `${page.width} / ${page.height}` }}>
-                    <img src={page.blobUrl} alt={`Atlas page ${page.index}`} />
-                  </div>
-                  <strong>Page {page.index}</strong>
-                  <span>
-                    {page.width} x {page.height}
-                  </span>
-                </article>
-              ))
-            ) : (
-              <div className="empty-state">Use Sprite Slicer or import PNG sources, then atlas pages will appear here.</div>
-            )}
+        <div
+          ref={props.packStageRef}
+          className="atlas-pack-stage viewport-stage cursor-hand"
+          onWheel={props.onPackWheel}
+          onPointerDown={props.onPackPanStart}
+          onPointerMove={props.onPackPanMove}
+          onPointerUp={props.onPackPanEnd}
+        >
+          <div className="viewport-inner">
+            <div className="viewport-camera" style={{ transform: `translate(${props.packPan.x}px, ${props.packPan.y}px)` }}>
+              {props.atlas?.pages.length ? (
+                <div className="atlas-pages-viewport" style={{ display: "flex", gap: `${16 * props.packZoom}px`, alignItems: "flex-start" }}>
+                  {props.atlas.pages.map((page) => (
+                    <div key={page.index} style={{ flexShrink: 0 }}>
+                      <img
+                        src={page.blobUrl}
+                        alt={`Atlas page ${page.index}`}
+                        style={{
+                          display: "block",
+                          width: page.width * props.packZoom,
+                          height: page.height * props.packZoom,
+                          imageRendering: "pixelated",
+                          border: "1px solid rgba(255,255,255,0.15)",
+                        }}
+                      />
+                      <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>
+                        Page {page.index} — {page.width}×{page.height}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">Use Sprite Slicer or import PNG sources, then atlas pages will appear here.</div>
+              )}
+            </div>
           </div>
         </div>
       ) : (
@@ -174,6 +199,8 @@ export function LevelWorkspace(props: {
   cursorClass: string;
   levelCanvasRef: RefObject<HTMLCanvasElement>;
   stageRef: RefObject<HTMLDivElement>;
+  rectDragStart: { x: number; y: number } | null;
+  rectDragCurrent: { x: number; y: number } | null;
   onCanvasPointerDown: (event: ReactPointerEvent<HTMLCanvasElement>) => void;
   onCanvasPointerMove: (event: ReactPointerEvent<HTMLCanvasElement>) => void;
   onCanvasPointerUp: (event: ReactPointerEvent<HTMLCanvasElement>) => void;
@@ -182,6 +209,29 @@ export function LevelWorkspace(props: {
   onStagePanMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStagePanEnd: (event: ReactPointerEvent<HTMLDivElement>) => void;
 }) {
+  const { level, rectDragStart: rds, rectDragCurrent: rdc, levelZoom: zoom } = props;
+
+  let rectOverlay: React.CSSProperties | null = null;
+  if (level && rds && rdc) {
+    const tw = level.tileWidth * zoom;
+    const th = level.tileHeight * zoom;
+    const x1 = Math.min(rds.x, rdc.x);
+    const y1 = Math.min(rds.y, rdc.y);
+    const x2 = Math.max(rds.x, rdc.x);
+    const y2 = Math.max(rds.y, rdc.y);
+    rectOverlay = {
+      position: "absolute",
+      left: x1 * tw,
+      top: y1 * th,
+      width: (x2 - x1 + 1) * tw,
+      height: (y2 - y1 + 1) * th,
+      border: "2px solid rgba(255, 200, 106, 0.9)",
+      background: "rgba(255, 200, 106, 0.12)",
+      pointerEvents: "none",
+      boxSizing: "border-box",
+    };
+  }
+
   return (
     <div className="workspace-content level-workspace">
       {props.level ? (
@@ -194,7 +244,7 @@ export function LevelWorkspace(props: {
           onPointerUp={props.onStagePanEnd}
         >
           <div className="viewport-inner">
-            <div className="viewport-camera" style={{ transform: `translate(${props.levelPan.x}px, ${props.levelPan.y}px)` }}>
+            <div className="viewport-camera" style={{ transform: `translate(${props.levelPan.x}px, ${props.levelPan.y}px)`, position: "relative" }}>
               <canvas
                 ref={props.levelCanvasRef}
                 width={props.level.mapWidthTiles * props.level.tileWidth * props.levelZoom}
@@ -203,6 +253,7 @@ export function LevelWorkspace(props: {
                 onPointerMove={props.onCanvasPointerMove}
                 onPointerUp={props.onCanvasPointerUp}
               />
+              {rectOverlay && <div style={rectOverlay} />}
             </div>
           </div>
         </div>

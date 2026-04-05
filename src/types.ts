@@ -1,6 +1,6 @@
 export type PotSize = 64 | 128 | 256 | 512 | 1024;
 
-export type WorkspaceMode = "atlas" | "tileset" | "level";
+export type WorkspaceMode = "atlas" | "tileset" | "level" | "animation";
 export type SliceKind = "sprite" | "tile" | "both";
 export type LevelTool =
   | "brush"
@@ -86,6 +86,31 @@ export interface TilesetAsset {
   firstAtlasSpriteId: number;
   tileCount: number;
   tileIds: number[];
+}
+
+export interface AnimationFrame {
+  sliceId: string;
+  durationMs: number;
+}
+
+export interface SpriteAnimation {
+  id: number;
+  name: string;
+  nameHash: number;
+  loop: boolean;
+  frames: AnimationFrame[];
+}
+
+export interface AnimatedTileFrame {
+  sliceId: string;
+  durationMs: number;
+}
+
+export interface AnimatedTileAsset {
+  id: number;
+  name: string;
+  baseTileId: number;
+  frames: AnimatedTileFrame[];
 }
 
 export type TerrainSetSlots = Record<number, number>;
@@ -189,6 +214,8 @@ export interface IdCounters {
   collision: number;
   marker: number;
   terrainSet: number;
+  spriteAnimation: number;
+  animatedTile: number;
 }
 
 export interface ProjectDocument {
@@ -200,6 +227,8 @@ export interface ProjectDocument {
   tiles: TilesetTileAsset[];
   tilesets: TilesetAsset[];
   terrainSets: TerrainSet[];
+  spriteAnimations: SpriteAnimation[];
+  animatedTiles: AnimatedTileAsset[];
   levels: LevelDocument[];
   atlasSettings: BuildOptions;
   idCounters: IdCounters;
@@ -226,18 +255,33 @@ export interface TilesetDraft {
   columns: number;
 }
 
+export type LevelPickerTab = "slices" | "tiles" | "terrain" | "animated";
+
+export interface TileBrush {
+  id: number;
+  name: string;
+  width: number;
+  height: number;
+  tiles: number[]; // row-major tileIds, 0 = empty cell
+}
+
 export interface EditorState {
   workspace: WorkspaceMode;
   selectedSourceImageId: string | null;
   selectedSliceIds: string[];
   selectedTilesetId: number | null;
   selectedTerrainSetId: number | null;
+  selectedSpriteAnimationId: number | null;
+  selectedAnimatedTileId: number | null;
+  animCurrentFrame: number;
+  animIsPlaying: boolean;
   selectedLevelId: string | null;
   selectedLayerId: string | null;
   selectedCollisionId: number | null;
   selectedMarkerId: number | null;
   atlasHoveredSpriteId: number | null;
   levelTool: LevelTool;
+  levelPickerTab: LevelPickerTab;
   gridVisible: boolean;
   chunkOverlayVisible: boolean;
   cullingOverlayVisible: boolean;
@@ -247,6 +291,9 @@ export interface EditorState {
   slicerZoom: number;
   slicerMode: SlicerMode;
   tilesetDraft: TilesetDraft;
+  savedBrushes: TileBrush[];
+  activeBrushId: number | null;
+  nextBrushId: number;
 }
 
 export interface AppState {
@@ -362,6 +409,7 @@ export type ProjectAction =
   | { type: "replaceProject"; project: ProjectDocument }
   | { type: "updateAtlasSettings"; patch: Partial<BuildOptions> }
   | { type: "addSourceImages"; sources: SourceImageAsset[] }
+  | { type: "removeSourceImage"; sourceImageId: string }
   | { type: "addSlices"; slices: SliceAsset[]; sprites?: SpriteAsset[] }
   | { type: "addSlicesToAtlas"; sliceIds: string[] }
   | { type: "addLevelTiles"; levelId: string; sliceIds: string[] }
@@ -370,6 +418,15 @@ export type ProjectAction =
   | { type: "publishTileset"; tileset: TilesetAsset; tiles: TilesetTileAsset[]; sprites: SpriteAsset[] }
   | { type: "upsertTerrainSet"; terrainSet: TerrainSet }
   | { type: "removeTerrainSet"; terrainSetId: number }
+  | { type: "upsertSpriteAnimation"; animation: SpriteAnimation }
+  | { type: "removeSpriteAnimation"; animationId: number }
+  | { type: "setSelectedSpriteAnimation"; animationId: number | null }
+  | { type: "upsertAnimatedTile"; animatedTile: AnimatedTileAsset }
+  | { type: "removeAnimatedTile"; animatedTileId: number }
+  | { type: "setSelectedAnimatedTile"; animatedTileId: number | null }
+  | { type: "setAnimFrame"; frame: number }
+  | { type: "setAnimPlaying"; playing: boolean }
+  | { type: "setLevelPickerTab"; tab: LevelPickerTab }
   | { type: "reorderSprites"; fromIndex: number; toIndex: number }
   | { type: "addLevel"; level: LevelDocument }
   | { type: "removeLevel"; levelId: string }
@@ -377,5 +434,10 @@ export type ProjectAction =
   | { type: "reorderLayer"; levelId: string; layerId: string; direction?: "up" | "down"; toIndex?: number }
   | { type: "removeLayer"; levelId: string; layerId: string }
   | { type: "updateLevel"; level: LevelDocument }
+  | { type: "updateLevelSilent"; level: LevelDocument }
+  | { type: "commitLevelStroke"; baseLevel: LevelDocument; currentLevel: LevelDocument }
   | { type: "replaceLevelChunks"; levelId: string; chunks: Record<string, TileChunk> }
-  | { type: "setAtlasHoveredSprite"; spriteId: number | null };
+  | { type: "setAtlasHoveredSprite"; spriteId: number | null }
+  | { type: "saveBrush"; brush: Omit<TileBrush, "id"> }
+  | { type: "deleteBrush"; brushId: number }
+  | { type: "setActiveBrush"; brushId: number | null };

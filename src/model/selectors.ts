@@ -1,4 +1,4 @@
-import { buildAtlas } from "../atlas";
+import { buildAtlas, type RuntimeAnimTileData } from "../atlas";
 import { buildRuntimeSpriteCatalog } from "../export/runtimeSprites";
 import type {
   AppState,
@@ -97,7 +97,54 @@ export async function buildAtlasFromProject(project: AppState["project"]): Promi
   if (!imports.length) {
     return null;
   }
-  return buildAtlas(imports, { ...project.atlasSettings, allowRotation: false });
+
+  const spriteBySliceId = new Map(project.sprites.map((s) => [s.sliceId, s]));
+  const spriteIndexById = new Map(imports.map((imp, idx) => [imp.id, idx]));
+  const tileByTileId = new Map(project.tiles.map((t) => [t.tileId, t]));
+
+  const runtimeAnims = (project.spriteAnimations ?? [])
+    .map((anim) => {
+      const frames = anim.frames.flatMap((f) => {
+        const sprite = spriteBySliceId.get(f.sliceId);
+        if (!sprite) return [];
+        const spriteIndex = spriteIndexById.get(sprite.id);
+        if (spriteIndex === undefined) {
+          console.warn(
+            `[atlas] Animation "${anim.name}": sprite for slice "${f.sliceId}" is not included in the atlas — frame will be omitted from export.`,
+          );
+          return [];
+        }
+        return [{ spriteIndex, durationMs: f.durationMs }];
+      });
+      return { nameHash: anim.nameHash, loop: anim.loop, frames };
+    })
+    .filter((a) => a.frames.length > 0);
+
+  const runtimeAnimTiles: RuntimeAnimTileData[] = (project.animatedTiles ?? [])
+    .flatMap((animTile) => {
+      const baseTile = tileByTileId.get(animTile.baseTileId);
+      if (!baseTile) return [];
+      const baseSpriteIndex = spriteIndexById.get(baseTile.spriteId);
+      if (baseSpriteIndex === undefined) return [];
+
+      const frames = animTile.frames.flatMap((f) => {
+        const sprite = spriteBySliceId.get(f.sliceId);
+        if (!sprite) return [];
+        const spriteIndex = spriteIndexById.get(sprite.id);
+        if (spriteIndex === undefined) {
+          console.warn(
+            `[atlas] AnimatedTile "${animTile.name}": sprite for slice "${f.sliceId}" is not included in the atlas — frame will be omitted.`,
+          );
+          return [];
+        }
+        return [{ spriteIndex, durationMs: f.durationMs }];
+      });
+
+      if (frames.length === 0) return [];
+      return [{ baseSpriteIndex, frames }];
+    });
+
+  return buildAtlas(imports, { ...project.atlasSettings, allowRotation: false }, runtimeAnims, runtimeAnimTiles);
 }
 
 export function buildNameHash(name: string): number {

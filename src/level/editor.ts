@@ -4,6 +4,7 @@ import type {
   LevelLayer,
   MarkerObject,
   MarkerShapeName,
+  TileBrush,
   TileCell,
   TileChunk,
 } from "../types";
@@ -56,6 +57,46 @@ export function fillRect(
     }
   }
   return next;
+}
+
+export function paintBrush(
+  level: LevelDocument,
+  layer: LevelLayer,
+  originX: number,
+  originY: number,
+  brush: TileBrush,
+): LevelDocument {
+  let next = level;
+  for (let by = 0; by < brush.height; by++) {
+    for (let bx = 0; bx < brush.width; bx++) {
+      const tileId = brush.tiles[by * brush.width + bx];
+      if (tileId) next = paintTile(next, layer, originX + bx, originY + by, tileId);
+    }
+  }
+  return next;
+}
+
+export function sampleBrushFromLevel(
+  level: LevelDocument,
+  layer: LevelLayer,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): { width: number; height: number; tiles: number[] } {
+  const minX = Math.max(0, Math.min(x0, x1));
+  const minY = Math.max(0, Math.min(y0, y1));
+  const maxX = Math.min(layer.widthTiles - 1, Math.max(x0, x1));
+  const maxY = Math.min(layer.heightTiles - 1, Math.max(y0, y1));
+  const width = maxX - minX + 1;
+  const height = maxY - minY + 1;
+  const tiles: number[] = [];
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      tiles.push(getTileAt(level, layer, x, y).tileId);
+    }
+  }
+  return { width, height, tiles };
 }
 
 export function bucketFill(level: LevelDocument, layer: LevelLayer, startX: number, startY: number, tileId: number): LevelDocument {

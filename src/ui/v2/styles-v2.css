@@ -1,0 +1,435 @@
+/* V2 Shell Layout */
+.v2-shell {
+  display: grid;
+  grid-template-rows: 48px 1fr;
+  grid-template-columns: 200px 1fr 280px;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* Topbar spans full width (row 1, all cols) */
+.v2-topbar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 0.75rem;
+  background: linear-gradient(
+    135deg,
+    rgba(93, 140, 197, 0.1),
+    transparent 34%
+  ),
+  linear-gradient(180deg, rgba(18, 24, 30, 0.98), rgba(14, 19, 24, 0.95));
+  border-bottom: 1px solid var(--border);
+  z-index: 40;
+}
+
+/* Left navigator (row 2, col 1) */
+.v2-sidebar-left {
+  grid-column: 1;
+  grid-row: 2;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--panel-soft);
+}
+
+/* Center canvas (row 2, col 2) */
+.v2-workspace {
+  grid-column: 2;
+  grid-row: 2;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Right panel: row 2, col 3 */
+.v2-sidebar-right {
+  grid-column: 3;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--panel-soft);
+  overflow: hidden;
+}
+
+/* Floating toolbar — centered at bottom like V1 */
+.v2-toolbar {
+  position: fixed;
+  left: 50%;
+  bottom: 1.1rem;
+  transform: translateX(-50%);
+  z-index: 35;
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  max-width: calc(100vw - 1.5rem);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Grouped pill clusters inside the toolbar */
+.v2-dock-group {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border-radius: 0.75rem;
+  background: rgba(10, 14, 19, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255,255,255,0.04) inset;
+}
+
+/* Animation workspace: full-screen override */
+.v2-shell.workspace-animation .v2-sidebar-left,
+.v2-shell.workspace-animation .v2-sidebar-right,
+.v2-shell.workspace-animation .v2-toolbar {
+  display: none;
+}
+
+.v2-shell.workspace-animation .v2-workspace {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+/* Atlas mode: left nav stays visible (source image picker lives there) */
+
+/* ---- Topbar pieces ---- */
+.v2-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: #f0c57b;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.v2-logo-dot {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f3ca84, #bd7e38);
+  box-shadow: 0 0 0 3px rgba(240, 197, 123, 0.12);
+  flex-shrink: 0;
+}
+
+.v2-workspace-tabs {
+  display: flex;
+  gap: 0.3rem;
+  justify-content: center;
+}
+
+.v2-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.v2-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+}
+
+.v2-tab-btn.active {
+  background: rgba(135, 197, 255, 0.12);
+  border-color: rgba(135, 197, 255, 0.25);
+  color: var(--accent);
+}
+
+.v2-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* ---- Tool buttons ---- */
+.v2-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.55rem;
+  height: 2.55rem;
+  border-radius: 0.55rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  padding: 0;
+}
+
+.v2-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+}
+
+.v2-tool-btn.active {
+  background: rgba(135, 197, 255, 0.14);
+  border-color: rgba(135, 197, 255, 0.3);
+  color: var(--accent);
+}
+
+.v2-tool-btn svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.75;
+}
+
+.v2-toolbar-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+  margin: 0 0.15rem;
+  flex-shrink: 0;
+}
+
+.v2-toolbar-spacer {
+  flex: 1;
+}
+
+/* ---- Right panel ---- */
+.v2-right-inspector {
+  flex-shrink: 0;
+  overflow-y: auto;
+  min-height: 120px;
+  resize: vertical;
+  max-height: 60%;
+}
+
+/* In atlas/animation mode there's no tile palette below — let inspector fill full height */
+.v2-shell.workspace-atlas .v2-right-inspector {
+  flex: 1;
+  max-height: none;
+  resize: none;
+}
+
+.v2-right-divider {
+  height: 5px;
+  background: var(--border);
+  cursor: row-resize;
+  flex-shrink: 0;
+  transition: background 0.12s;
+}
+
+.v2-right-divider:hover {
+  background: var(--border-strong);
+}
+
+.v2-tile-palette {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.v2-tile-palette-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.65rem 0.3rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.v2-tile-palette-tabs {
+  display: flex;
+  gap: 0.2rem;
+  flex: 1;
+}
+
+.v2-palette-tab-btn {
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.35rem;
+  font-size: 0.75rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.v2-palette-tab-btn.active {
+  background: rgba(135, 197, 255, 0.1);
+  border-color: rgba(135, 197, 255, 0.22);
+  color: var(--accent);
+}
+
+.v2-tile-palette-search {
+  padding: 0.35rem 0.65rem;
+  flex-shrink: 0;
+}
+
+.v2-tile-palette-search input {
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+}
+
+.v2-tile-palette-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.4rem 0.5rem;
+}
+
+.v2-tile-palette-section-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.3rem;
+  margin-top: 0.5rem;
+  padding-left: 0.15rem;
+}
+
+.v2-tile-palette-section-label:first-child {
+  margin-top: 0;
+}
+
+.v2-tile-palette-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 0.4rem;
+}
+
+.v2-tile-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 0.3rem;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px;
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: border-color 0.1s, background 0.1s;
+}
+
+.v2-tile-btn:hover {
+  border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.v2-tile-btn.active {
+  border-color: var(--accent);
+  background: rgba(135, 197, 255, 0.12);
+  box-shadow: 0 0 0 1px rgba(135, 197, 255, 0.3);
+}
+
+.v2-tile-btn .tile-preview {
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+}
+
+.v2-tile-btn .tile-preview-image {
+  image-rendering: pixelated;
+}
+
+/* Current tile display in toolbar */
+.v2-active-tile {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem;
+}
+
+.v2-active-tile-preview {
+  width: 34px;
+  height: 34px;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border-strong);
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.v2-active-tile-preview .tile-preview {
+  width: 30px;
+  height: 30px;
+  overflow: hidden;
+}
+
+/* Zoom display */
+.v2-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.v2-zoom-controls span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-width: 42px;
+  text-align: center;
+}
+
+/* Panel inner structure reuse for right panel header */
+.v2-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.v2-panel-header h3 {
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+/* Workspace panels fill their grid cell */
+.v2-workspace > * {
+  width: 100%;
+  height: 100%;
+}
+
+/* Scrollbar styling */
+.v2-sidebar-left::-webkit-scrollbar,
+.v2-right-inspector::-webkit-scrollbar,
+.v2-tile-palette-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.v2-sidebar-left::-webkit-scrollbar-thumb,
+.v2-right-inspector::-webkit-scrollbar-thumb,
+.v2-tile-palette-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 2px;
+}

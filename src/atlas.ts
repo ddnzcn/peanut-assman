@@ -10,12 +10,27 @@ import { align, crc32 } from "./utils";
 
 const MAGIC = 0x54443241;
 const VERSION_MAJOR = 1;
-const VERSION_MINOR = 0;
+const VERSION_MINOR = 1;
 
-const HEADER_SIZE = 44;
+const HEADER_SIZE = 56;
 const PAGE_SIZE = 30;
 const SPRITE_SIZE = 40;
+const ANIM_SIZE = 12;
+const FRAME_SIZE = 8;
+const ANIM_TILE_SIZE = 8;
+const ANIM_TILE_FRAME_SIZE = 8;
 const HASH_SIZE = 8;
+
+export interface RuntimeAnimData {
+  nameHash: number;
+  loop: boolean;
+  frames: Array<{ spriteIndex: number; durationMs: number }>;
+}
+
+export interface RuntimeAnimTileData {
+  baseSpriteIndex: number;
+  frames: Array<{ spriteIndex: number; durationMs: number }>;
+}
 const POT_CANDIDATES = [64, 128, 256, 512, 1024] as const;
 const PAGE_COUNT_PENALTY = 1_000_000;
 const ASPECT_PENALTY_SCALE = 1_000;
@@ -68,6 +83,8 @@ interface PackingCandidateResult {
 export function buildAtlas(
   imports: ImportSprite[],
   options: BuildOptions,
+  animations: RuntimeAnimData[] = [],
+  animTiles: RuntimeAnimTileData[] = [],
 ): PackedAtlas {
   const prepared = imports.map((sprite) => prepareSprite(sprite, options));
 
@@ -85,6 +102,8 @@ export function buildAtlas(
     options,
     candidateDebug,
     chosenCandidate,
+    animations,
+    animTiles,
   );
 
   for (const candidate of candidateDebug) {
@@ -673,6 +692,8 @@ function buildMetadata(
   options: BuildOptions,
   candidateDebug: CandidateDebugEntry[],
   chosenCandidate: CandidateDebugEntry,
+  animations: RuntimeAnimData[] = [],
+  animTiles: RuntimeAnimTileData[] = [],
 ): { meta: Uint8Array; debug: string } {
   const sortedPlacements = [...placements].sort(
     (left, right) => left.sprite.id - right.sprite.id,
@@ -689,16 +710,30 @@ function buildMetadata(
   const payloadCrc32 = crc32(atlasBin);
   const pageTableOffset = align(HEADER_SIZE, 4);
   const spriteTableOffset = align(pageTableOffset + pages.length * PAGE_SIZE, 4);
+  const totalFrameCount = animations.reduce((sum, a) => sum + a.frames.length, 0);
   const animTableOffset = align(
     spriteTableOffset + sortedPlacements.length * SPRITE_SIZE,
     4,
   );
-  const frameTableOffset = animTableOffset;
+  const frameTableOffset = align(animTableOffset + animations.length * ANIM_SIZE, 4);
+  const endOfFrameTable = frameTableOffset + totalFrameCount * FRAME_SIZE;
+  const totalAnimTileFrameCount = animTiles.reduce((sum, t) => sum + t.frames.length, 0);
+  const animTileTableOffset =
+    animTiles.length > 0 ? align(endOfFrameTable, 4) : 0;
+  const animTileFrameTableOffset =
+    animTiles.length > 0
+      ? align(animTileTableOffset + animTiles.length * ANIM_TILE_SIZE, 4)
+      : 0;
+  const endOfAnimTileFrameTable =
+    animTiles.length > 0
+      ? animTileFrameTableOffset + totalAnimTileFrameCount * ANIM_TILE_FRAME_SIZE
+      : endOfFrameTable;
   const hashTableOffset =
-    hashEntries.length > 0 ? align(frameTableOffset, 4) : 0;
+    hashEntries.length > 0 ? align(endOfAnimTileFrameTable, 4) : 0;
   const fileSize = align(
-    (hashEntries.length > 0 ? hashTableOffset : frameTableOffset) +
-      hashEntries.length * HASH_SIZE,
+    hashEntries.length > 0
+      ? hashTableOffset + hashEntries.length * HASH_SIZE
+      : endOfAnimTileFrameTable,
     4,
   );
   const meta = new Uint8Array(fileSize);
@@ -747,6 +782,51 @@ function buildMetadata(
     view.setUint16(offset + 38, placement.sprite.sourceHeight, true);
   });
 
+  let firstFrameIndex = 0;
+  animations.forEach((anim, index) => {
+    const offset = animTableOffset + index * ANIM_SIZE;
+    const flags = anim.loop ? 1 : 0;
+    const clampedFirst = Math.min(firstFrameIndex, 0xffff);
+    view.setUint32(offset + 0, anim.nameHash, true);
+    view.setUint16(offset + 4, clampedFirst, true);
+    view.setUint16(offset + 6, anim.frames.length, true);
+    view.setUint16(offset + 8, flags, true);
+    view.setUint16(offset + 10, 0, true);
+    firstFrameIndex += anim.frames.length;
+  });
+
+  let frameWriteIndex = 0;
+  animations.forEach((anim) => {
+    anim.frames.forEach((frame) => {
+      const offset = frameTableOffset + frameWriteIndex * FRAME_SIZE;
+      const clampedDuration = Math.min(frame.durationMs, 0xffff);
+      view.setUint32(offset + 0, frame.spriteIndex, true);
+      view.setUint16(offset + 4, clampedDuration, true);
+      view.setUint16(offset + 6, 0, true);
+      frameWriteIndex += 1;
+    });
+  });
+
+  let animTileFirstFrame = 0;
+  animTiles.forEach((animTile, index) => {
+    const offset = animTileTableOffset + index * ANIM_TILE_SIZE;
+    view.setUint32(offset + 0, animTile.baseSpriteIndex, true);
+    view.setUint16(offset + 4, Math.min(animTileFirstFrame, 0xffff), true);
+    view.setUint16(offset + 6, Math.min(animTile.frames.length, 0xffff), true);
+    animTileFirstFrame += animTile.frames.length;
+  });
+
+  let animTileFrameWriteIndex = 0;
+  animTiles.forEach((animTile) => {
+    animTile.frames.forEach((frame) => {
+      const offset = animTileFrameTableOffset + animTileFrameWriteIndex * ANIM_TILE_FRAME_SIZE;
+      view.setUint32(offset + 0, frame.spriteIndex, true);
+      view.setUint16(offset + 4, Math.min(frame.durationMs, 0xffff), true);
+      view.setUint16(offset + 6, 0, true);
+      animTileFrameWriteIndex += 1;
+    });
+  });
+
   hashEntries.forEach((entry, index) => {
     const offset = hashTableOffset + index * HASH_SIZE;
     view.setUint32(offset + 0, entry.nameHash, true);
@@ -760,13 +840,17 @@ function buildMetadata(
   view.setUint32(12, payloadCrc32, true);
   view.setUint16(16, pages.length, true);
   view.setUint16(18, sortedPlacements.length, true);
-  view.setUint16(20, 0, true);
+  view.setUint16(20, animations.length, true);
   view.setUint16(22, options.includeHashTable ? 1 : 0, true);
   view.setUint32(24, pageTableOffset, true);
   view.setUint32(28, spriteTableOffset, true);
   view.setUint32(32, animTableOffset, true);
   view.setUint32(36, frameTableOffset, true);
   view.setUint32(40, hashTableOffset, true);
+  view.setUint16(44, animTiles.length, true);
+  view.setUint16(46, 0, true); // reserved0
+  view.setUint32(48, animTileTableOffset, true);
+  view.setUint32(52, animTileFrameTableOffset, true);
 
   const debug = JSON.stringify(
     {

@@ -41,6 +41,8 @@ export function createExampleProject(): ProjectDocument {
     tilesets: [tileset],
     terrainSets: [terrainSet],
     levels: [level],
+    spriteAnimations: [],
+    animatedTiles: [],
     atlasSettings: DEFAULT_ATLAS_OPTIONS,
     idCounters: {
       ...createDefaultIdCounters(),

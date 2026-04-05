@@ -7,6 +7,7 @@ import {
 } from "react";
 import { createDefaultLevel, createEmptyProject, DEFAULT_EDITOR_STATE } from "./project";
 import type {
+  AnimatedTileAsset,
   AppState,
   HistorySnapshot,
   LevelDocument,
@@ -14,6 +15,7 @@ import type {
   LevelLayer,
   ProjectAction,
   ProjectDocument,
+  SpriteAnimation,
   TileChunk,
 } from "../types";
 import { chunkKey, clamp, fnv1a32 } from "../utils";
@@ -193,6 +195,20 @@ function reducer(state: AppState, action: ProjectAction): AppState {
     });
   }
 
+  if (action.type === "commitLevelStroke") {
+    const snapshot = createLevelHistorySnapshot(
+      { ...state, project: { ...state.project, levels: state.project.levels.map((l) => l.id === action.baseLevel.id ? action.baseLevel : l) } },
+      { ...state, project: { ...state.project, levels: state.project.levels.map((l) => l.id === action.currentLevel.id ? action.currentLevel : l) } },
+      action.currentLevel.id,
+    );
+    if (!snapshot) return state;
+    return {
+      ...state,
+      undoStack: [...state.undoStack, snapshot].slice(-HISTORY_LIMIT),
+      redoStack: [],
+    };
+  }
+
   const nextState = reducePresent(state, action);
   if (nextState === state) {
     return state;
@@ -284,16 +300,30 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
     case "replaceProject": {
       const selectedLevelId = action.project.levels[0]?.id ?? null;
       const selectedLayerId = action.project.levels[0]?.layers[0]?.id ?? null;
+      const project: ProjectDocument = {
+        ...action.project,
+        spriteAnimations: action.project.spriteAnimations ?? [],
+        animatedTiles: action.project.animatedTiles ?? [],
+        idCounters: {
+          ...action.project.idCounters,
+          spriteAnimation: action.project.idCounters.spriteAnimation ?? 1,
+          animatedTile: action.project.idCounters.animatedTile ?? 1,
+        },
+      };
       return {
         ...state,
-        project: action.project,
+        project,
         editor: {
           ...state.editor,
           selectedLevelId,
           selectedLayerId,
-          selectedTilesetId: action.project.tilesets[0]?.id ?? null,
-          selectedTerrainSetId: action.project.terrainSets[0]?.id ?? null,
-          selectedSourceImageId: action.project.sourceImages[0]?.id ?? null,
+          selectedTilesetId: project.tilesets[0]?.id ?? null,
+          selectedTerrainSetId: project.terrainSets[0]?.id ?? null,
+          selectedSourceImageId: project.sourceImages[0]?.id ?? null,
+          selectedSpriteAnimationId: null,
+          selectedAnimatedTileId: null,
+          animCurrentFrame: 0,
+          animIsPlaying: false,
           selectedSliceIds: [],
         },
       };
@@ -322,6 +352,38 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
           selectedSourceImageId: action.sources[0]?.id ?? state.editor.selectedSourceImageId,
         },
       };
+    case "removeSourceImage": {
+      const removedSliceIds = new Set(
+        state.project.slices
+          .filter((s) => s.sourceImageId === action.sourceImageId)
+          .map((s) => s.id),
+      );
+      const removedSpriteIds = new Set(
+        state.project.sprites
+          .filter((sp) => removedSliceIds.has(sp.sliceId))
+          .map((sp) => sp.id),
+      );
+      const nextSourceImages = state.project.sourceImages.filter((s) => s.id !== action.sourceImageId);
+      const nextSlices = state.project.slices.filter((s) => s.sourceImageId !== action.sourceImageId);
+      const nextSprites = state.project.sprites.filter((sp) => !removedSpriteIds.has(sp.id));
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          sourceImages: nextSourceImages,
+          slices: nextSlices,
+          sprites: nextSprites,
+        },
+        editor: {
+          ...state.editor,
+          selectedSourceImageId:
+            state.editor.selectedSourceImageId === action.sourceImageId
+              ? (nextSourceImages[0]?.id ?? null)
+              : state.editor.selectedSourceImageId,
+          selectedSliceIds: state.editor.selectedSliceIds.filter((id) => !removedSliceIds.has(id)),
+        },
+      };
+    }
     case "addSlices":
       return {
         ...state,
@@ -542,6 +604,92 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
         },
       };
     }
+    case "upsertSpriteAnimation": {
+      const existing = state.project.spriteAnimations.find((a) => a.id === action.animation.id);
+      const spriteAnimations: SpriteAnimation[] = existing
+        ? state.project.spriteAnimations.map((a) => (a.id === action.animation.id ? action.animation : a))
+        : [...state.project.spriteAnimations, action.animation];
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          spriteAnimations,
+          idCounters: {
+            ...state.project.idCounters,
+            spriteAnimation: Math.max(state.project.idCounters.spriteAnimation, action.animation.id + 1),
+          },
+        },
+        editor: { ...state.editor, selectedSpriteAnimationId: action.animation.id, animCurrentFrame: 0, animIsPlaying: false },
+      };
+    }
+    case "removeSpriteAnimation": {
+      const spriteAnimations = state.project.spriteAnimations.filter((a) => a.id !== action.animationId);
+      return {
+        ...state,
+        project: { ...state.project, spriteAnimations },
+        editor: {
+          ...state.editor,
+          selectedSpriteAnimationId:
+            state.editor.selectedSpriteAnimationId === action.animationId
+              ? (spriteAnimations[0]?.id ?? null)
+              : state.editor.selectedSpriteAnimationId,
+          animCurrentFrame: 0,
+          animIsPlaying: false,
+        },
+      };
+    }
+    case "setSelectedSpriteAnimation":
+      return {
+        ...state,
+        editor: {
+          ...state.editor,
+          selectedSpriteAnimationId: action.animationId,
+          animCurrentFrame: 0,
+          animIsPlaying: false,
+        },
+      };
+    case "upsertAnimatedTile": {
+      const existing = state.project.animatedTiles.find((a) => a.id === action.animatedTile.id);
+      const animatedTiles: AnimatedTileAsset[] = existing
+        ? state.project.animatedTiles.map((a) => (a.id === action.animatedTile.id ? action.animatedTile : a))
+        : [...state.project.animatedTiles, action.animatedTile];
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          animatedTiles,
+          idCounters: {
+            ...state.project.idCounters,
+            animatedTile: Math.max(state.project.idCounters.animatedTile, action.animatedTile.id + 1),
+            // If this is a NEW animated tile, reserve its baseTileId so it doesn't collide with future tiles
+            tile: existing ? state.project.idCounters.tile : Math.max(state.project.idCounters.tile, action.animatedTile.baseTileId + 1),
+          },
+        },
+        editor: { ...state.editor, selectedAnimatedTileId: action.animatedTile.id },
+      };
+    }
+    case "removeAnimatedTile": {
+      const animatedTiles = state.project.animatedTiles.filter((a) => a.id !== action.animatedTileId);
+      return {
+        ...state,
+        project: { ...state.project, animatedTiles },
+        editor: {
+          ...state.editor,
+          selectedAnimatedTileId:
+            state.editor.selectedAnimatedTileId === action.animatedTileId
+              ? (animatedTiles[0]?.id ?? null)
+              : state.editor.selectedAnimatedTileId,
+        },
+      };
+    }
+    case "setSelectedAnimatedTile":
+      return { ...state, editor: { ...state.editor, selectedAnimatedTileId: action.animatedTileId } };
+    case "setAnimFrame":
+      return { ...state, editor: { ...state.editor, animCurrentFrame: action.frame } };
+    case "setAnimPlaying":
+      return { ...state, editor: { ...state.editor, animIsPlaying: action.playing, animCurrentFrame: action.playing ? state.editor.animCurrentFrame : 0 } };
+    case "setLevelPickerTab":
+      return { ...state, editor: { ...state.editor, levelPickerTab: action.tab } };
     case "reorderSprites": {
       if (
         action.fromIndex < 0 ||
@@ -672,6 +820,7 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
       };
     }
     case "updateLevel":
+    case "updateLevelSilent":
       return {
         ...state,
         project: {
@@ -691,6 +840,34 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
       };
     case "setAtlasHoveredSprite":
       return { ...state, editor: { ...state.editor, atlasHoveredSpriteId: action.spriteId } };
+    case "saveBrush": {
+      const id = state.editor.nextBrushId;
+      const brush = { ...action.brush, id };
+      return {
+        ...state,
+        editor: {
+          ...state.editor,
+          savedBrushes: [...(state.editor.savedBrushes ?? []), brush],
+          activeBrushId: id,
+          nextBrushId: id + 1,
+        },
+      };
+    }
+    case "deleteBrush": {
+      const remaining = (state.editor.savedBrushes ?? []).filter((b) => b.id !== action.brushId);
+      return {
+        ...state,
+        editor: {
+          ...state.editor,
+          savedBrushes: remaining,
+          activeBrushId: state.editor.activeBrushId === action.brushId
+            ? (remaining[remaining.length - 1]?.id ?? null)
+            : state.editor.activeBrushId,
+        },
+      };
+    }
+    case "setActiveBrush":
+      return { ...state, editor: { ...state.editor, activeBrushId: action.brushId } };
     default:
       return state;
   }
