@@ -201,9 +201,20 @@ export function LevelWorkspace(props: {
   stageRef: RefObject<HTMLDivElement>;
   rectDragStart: { x: number; y: number } | null;
   rectDragCurrent: { x: number; y: number } | null;
+  levelSelection: { x0: number; y0: number; x1: number; y1: number } | null;
+  levelTool: string;
+  cursorTile: { x: number; y: number } | null;
+  cursorBrushWidth: number;
+  cursorBrushHeight: number;
+  cursorIsErase: boolean;
+  hasClipboard: boolean;
+  onCopy: () => void;
+  onCut: () => void;
+  onPaste: () => void;
   onCanvasPointerDown: (event: ReactPointerEvent<HTMLCanvasElement>) => void;
   onCanvasPointerMove: (event: ReactPointerEvent<HTMLCanvasElement>) => void;
   onCanvasPointerUp: (event: ReactPointerEvent<HTMLCanvasElement>) => void;
+  onCanvasPointerLeave: () => void;
   onWheel: (event: ReactWheelEvent<HTMLDivElement>) => void;
   onStagePanStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStagePanMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -211,22 +222,70 @@ export function LevelWorkspace(props: {
 }) {
   const { level, rectDragStart: rds, rectDragCurrent: rdc, levelZoom: zoom } = props;
 
+  const tileW = level ? level.tileWidth * zoom : 0;
+  const tileH = level ? level.tileHeight * zoom : 0;
+
+  // Live drag rect overlay (rect-fill and select tools during drag)
   let rectOverlay: React.CSSProperties | null = null;
   if (level && rds && rdc) {
-    const tw = level.tileWidth * zoom;
-    const th = level.tileHeight * zoom;
     const x1 = Math.min(rds.x, rdc.x);
     const y1 = Math.min(rds.y, rdc.y);
     const x2 = Math.max(rds.x, rdc.x);
     const y2 = Math.max(rds.y, rdc.y);
     rectOverlay = {
       position: "absolute",
-      left: x1 * tw,
-      top: y1 * th,
-      width: (x2 - x1 + 1) * tw,
-      height: (y2 - y1 + 1) * th,
+      left: x1 * tileW,
+      top: y1 * tileH,
+      width: (x2 - x1 + 1) * tileW,
+      height: (y2 - y1 + 1) * tileH,
       border: "2px solid rgba(255, 200, 106, 0.9)",
       background: "rgba(255, 200, 106, 0.12)",
+      pointerEvents: "none",
+      boxSizing: "border-box",
+    };
+  }
+
+  // Committed selection overlay — persists while select tool is active
+  let selectionOverlay: React.CSSProperties | null = null;
+  const sel = props.levelSelection;
+  if (level && sel && props.levelTool === "select" && !rds) {
+    const x1 = Math.min(sel.x0, sel.x1);
+    const y1 = Math.min(sel.y0, sel.y1);
+    const x2 = Math.max(sel.x0, sel.x1);
+    const y2 = Math.max(sel.y0, sel.y1);
+    selectionOverlay = {
+      position: "absolute",
+      left: x1 * tileW,
+      top: y1 * tileH,
+      width: (x2 - x1 + 1) * tileW,
+      height: (y2 - y1 + 1) * tileH,
+      border: "2px dashed rgba(255, 200, 106, 0.85)",
+      background: "rgba(255, 200, 106, 0.08)",
+      pointerEvents: "none",
+      boxSizing: "border-box",
+    };
+  }
+
+  // Cursor preview overlay — ghost of brush/tile under cursor
+  let cursorOverlay: React.CSSProperties | null = null;
+  const ct = props.cursorTile;
+  if (level && ct && (props.levelTool === "brush" || props.levelTool === "erase")) {
+    const w = props.cursorBrushWidth;
+    const h = props.cursorBrushHeight;
+    const originX = props.cursorBrushWidth > 1 ? ct.x - Math.floor(w / 2) : ct.x;
+    const originY = props.cursorBrushHeight > 1 ? ct.y - Math.floor(h / 2) : ct.y;
+    cursorOverlay = {
+      position: "absolute",
+      left: originX * tileW,
+      top: originY * tileH,
+      width: w * tileW,
+      height: h * tileH,
+      border: props.cursorIsErase
+        ? "2px solid rgba(255, 80, 80, 0.8)"
+        : "2px solid rgba(255, 255, 255, 0.6)",
+      background: props.cursorIsErase
+        ? "rgba(255, 80, 80, 0.18)"
+        : "rgba(255, 255, 255, 0.12)",
       pointerEvents: "none",
       boxSizing: "border-box",
     };
@@ -252,8 +311,28 @@ export function LevelWorkspace(props: {
                 onPointerDown={props.onCanvasPointerDown}
                 onPointerMove={props.onCanvasPointerMove}
                 onPointerUp={props.onCanvasPointerUp}
+                onPointerLeave={props.onCanvasPointerLeave}
               />
+              {cursorOverlay && <div style={cursorOverlay} />}
               {rectOverlay && <div style={rectOverlay} />}
+              {selectionOverlay && <div style={selectionOverlay} />}
+              {selectionOverlay && sel && (
+                <div style={{
+                  position: "absolute",
+                  left: Math.min(sel.x0, sel.x1) * tileW,
+                  top: Math.max(sel.y0, sel.y1) * tileH + tileH + 4,
+                  display: "flex",
+                  gap: 4,
+                  pointerEvents: "auto",
+                  zIndex: 10,
+                }}>
+                  <button className="v2-tool-btn" title="Cut (Ctrl+X)" onClick={props.onCut} style={{ fontSize: 11, padding: "2px 7px" }}>Cut</button>
+                  <button className="v2-tool-btn" title="Copy (Ctrl+C)" onClick={props.onCopy} style={{ fontSize: 11, padding: "2px 7px" }}>Copy</button>
+                  {props.hasClipboard && (
+                    <button className="v2-tool-btn" title="Paste (Ctrl+V)" onClick={props.onPaste} style={{ fontSize: 11, padding: "2px 7px" }}>Paste</button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

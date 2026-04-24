@@ -435,6 +435,12 @@ export function AppShellV2() {
     handleAnimationTick,
     levelSelection,
     setLevelSelection,
+    handleLevelPointerLeave,
+    cursorTile,
+    clipboardBrush,
+    handleCopy,
+    handleCut,
+    handlePaste,
   } = controller;
 
   const workspace = state.editor.workspace;
@@ -443,6 +449,13 @@ export function AppShellV2() {
   const paletteTiles = effectiveLevelTileIds
     .map((tileId) => state.project.tiles.find((t) => t.tileId === tileId))
     .filter((t): t is TilesetTileAsset => Boolean(t));
+
+  const activeBrush =
+    state.editor.activeBrushId === -1
+      ? clipboardBrush
+      : (state.editor.savedBrushes ?? []).find((b) => b.id === state.editor.activeBrushId) ?? null;
+  const cursorBrushWidth = activeBrush?.width ?? 1;
+  const cursorBrushHeight = activeBrush?.height ?? 1;
 
   function handleSelectPaintTile(tileId: number) {
     setSelectedPaintTileId(tileId);
@@ -718,9 +731,20 @@ export function AppShellV2() {
             cursorClass={levelCursorClass}
             rectDragStart={rectDragStart}
             rectDragCurrent={rectDragCurrent}
+            levelSelection={levelSelection}
+            levelTool={state.editor.levelTool}
+            cursorTile={cursorTile}
+            cursorBrushWidth={cursorBrushWidth}
+            cursorBrushHeight={cursorBrushHeight}
+            cursorIsErase={state.editor.levelTool === "erase"}
+            hasClipboard={!!clipboardBrush}
+            onCopy={handleCopy}
+            onCut={handleCut}
+            onPaste={handlePaste}
             onCanvasPointerDown={handleLevelPointerDown}
             onCanvasPointerMove={handleLevelPointerMove}
             onCanvasPointerUp={handleLevelPointerUp}
+            onCanvasPointerLeave={handleLevelPointerLeave}
             onWheel={(event) => handleWheelZoom(event, "level")}
             onStagePanStart={(event) => handlePanStart(event, "level", true)}
             onStagePanMove={handlePanMove}
@@ -738,6 +762,7 @@ export function AppShellV2() {
               <Settings size={12} />
               <h3>Inspector</h3>
             </div>
+            <div className="v2-right-inspector-content">
             {workspace === "atlas" ? (
               <AtlasInspector
                 atlas={atlas}
@@ -831,6 +856,7 @@ export function AppShellV2() {
                 />
               )
             ) : null}
+            </div>
           </div>
 
           {/* Divider and tile palette (level mode only) */}
@@ -992,6 +1018,9 @@ export function AppShellV2() {
 
               {/* Tools group */}
               <div className="v2-dock-group">
+                <V2ToolBtn label="Select" shortcut="V" active={state.editor.levelTool === "select"} onClick={() => dispatch({ type: "setLevelTool", tool: "select" })}>
+                  <MousePointer2 />
+                </V2ToolBtn>
                 <V2ToolBtn label="Brush" shortcut="B" active={state.editor.levelTool === "brush"} onClick={() => dispatch({ type: "setLevelTool", tool: "brush" })}>
                   <Pencil />
                 </V2ToolBtn>

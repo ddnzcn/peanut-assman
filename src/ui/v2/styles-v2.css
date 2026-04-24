@@ -34,6 +34,7 @@
   overflow-y: auto;
   border-right: 1px solid var(--border);
   background: var(--panel-soft);
+  padding: 16px;
 }
 
 /* Center canvas (row 2, col 2) */
@@ -213,6 +214,10 @@
   min-height: 120px;
   resize: vertical;
   max-height: 60%;
+}
+
+.v2-right-inspector-content {
+  padding: 16px;
 }
 
 /* In atlas/animation mode there's no tile palette below — let inspector fill full height */
