@@ -425,6 +425,153 @@
   height: 100%;
 }
 
+/* ---- Scene Tree ---- */
+.scene-tree {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.scene-tree-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.25rem 0;
+}
+
+.scene-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.4rem;
+  cursor: pointer;
+  border-radius: 0.3rem;
+  margin: 0 0.25rem;
+  font-size: 0.76rem;
+  min-height: 24px;
+  user-select: none;
+  transition: background 0.08s;
+}
+
+.scene-tree-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.scene-tree-row.active {
+  background: rgba(135, 197, 255, 0.12);
+  color: var(--accent);
+}
+
+.scene-tree-row.drag-over {
+  outline: 1px dashed rgba(135, 197, 255, 0.5);
+  outline-offset: -1px;
+}
+
+.scene-tree-chevron {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.scene-tree-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.scene-tree-rename {
+  flex: 1;
+  font-size: 0.76rem;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.25rem;
+  background: rgba(0, 0, 0, 0.3);
+  color: inherit;
+  outline: none;
+  min-width: 0;
+}
+
+.scene-tree-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.1s;
+  flex-shrink: 0;
+}
+
+.scene-tree-row:hover .scene-tree-actions,
+.scene-tree-row.active .scene-tree-actions {
+  opacity: 1;
+}
+
+.scene-tree-action-btn {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  border-radius: 0.2rem;
+}
+
+.scene-tree-action-btn:hover {
+  color: inherit;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.scene-tree-add-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0.3rem;
+  margin: 0 0.25rem 0.25rem;
+  background: rgba(10, 14, 19, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.scene-tree-add-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.76rem;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 0.25rem;
+  text-align: left;
+}
+
+.scene-tree-add-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.scene-tree-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scene-tree-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 2px;
+}
+
 /* Scrollbar styling */
 .pn-sidebar-left::-webkit-scrollbar,
 .pn-right-inspector::-webkit-scrollbar,

@@ -35,6 +35,7 @@ import { AnimationWorkspace } from "../app-shell/timeline";
 import {
   AtlasInspector,
 } from "../app-shell/inspectors";
+import { SceneTree } from "../app-shell/SceneTree";
 import { AtlasAssetsPanel, LevelAssetPicker } from "../app-shell/pickers";
 import { TileAssetPreview } from "../app-shell/shared";
 import { clamp } from "../../utils";
@@ -560,15 +561,14 @@ export function AppShell() {
 
       {/* ---- LEFT NAVIGATOR ---- */}
       {workspace === "level" && scene ? (
-        <aside className="pn-sidebar-left">
-          <div style={{ padding: "0.5rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
-            <strong>{scene.name}</strong>
-            <div style={{ marginTop: "0.5rem" }}>
-              {/* TODO: SceneTree component */}
-              <p>Scene tree (coming soon)</p>
-              {selectedNode && <p>Selected: {selectedNode.name} ({selectedNode.data.type})</p>}
-            </div>
-          </div>
+        <aside className="pn-sidebar-left" style={{ padding: 0 }}>
+          <SceneTree
+            scenes={state.project.scenes}
+            selectedSceneId={state.editor.selectedSceneId}
+            selectedNodeId={state.editor.selectedNodeId}
+            nodeIdCounter={state.project.idCounters.node}
+            dispatch={dispatch}
+          />
         </aside>
       ) : workspace === "atlas" ? (
         <aside className="pn-sidebar-left">
