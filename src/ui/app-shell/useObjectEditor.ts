@@ -49,10 +49,16 @@ export function useObjectEditor({
     if (state.editor.levelTool === "objectPlace") {
       const pixel = getCanvasPixel(event, canvasRef.current, state.editor.levelZoom);
       if (!pixel) return false;
+      let px = pixel.x, py = pixel.y;
+      if (event.ctrlKey || event.metaKey) {
+        const gridSize = 16;
+        px = Math.round(px / gridSize) * gridSize;
+        py = Math.round(py / gridSize) * gridSize;
+      }
       const parentId = selectedNode?.id ?? scene.root.id;
       const nodeId = `node-${state.project.idCounters.node}`;
       const node = createNode(objectPlaceType, objectPlaceType, nodeId);
-      node.transform = { ...node.transform, x: pixel.x, y: pixel.y };
+      node.transform = { ...node.transform, x: px, y: py };
       dispatch({ type: "addChildNode", sceneId: scene.id, parentId, node });
       return true;
     }

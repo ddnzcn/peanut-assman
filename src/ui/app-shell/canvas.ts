@@ -365,7 +365,8 @@ export function renderSceneNodes(
   for (const layerKey of sortedKeys) {
     const nodes = layers.get(layerKey)!;
     for (const node of nodes) {
-      if (node.data.type === "Root" || node.data.type === "Node2D" || node.data.type === "TileMap") continue;
+      if (node.data.type === "Root" || node.data.type === "TileMap") continue;
+      if (node.data.type === "Node2D" && node.id !== selectedNodeId) continue;
 
       const wt = getWorldTransform(scene.root, node.id);
       const pxOff = cameraPan ? cameraPan.x * (1 - node.parallaxX) : 0;
@@ -373,7 +374,20 @@ export function renderSceneNodes(
       const px = wt.x * zoom + pxOff;
       const py = wt.y * zoom + pyOff;
 
-      if (node.data.type === "Sprite") {
+      if (node.data.type === "Node2D") {
+        if (node.id === selectedNodeId) {
+          context.strokeStyle = "rgba(255,255,255,0.3)";
+          context.lineWidth = 1;
+          context.setLineDash([3, 3]);
+          context.beginPath();
+          context.moveTo(px - 8, py);
+          context.lineTo(px + 8, py);
+          context.moveTo(px, py - 8);
+          context.lineTo(px, py + 8);
+          context.stroke();
+          context.setLineDash([]);
+        }
+      } else if (node.data.type === "Sprite") {
         const slice = sliceById.get(node.data.sliceId);
         const source = slice ? sourceById.get(slice.sourceImageId) : null;
         const image = source ? getCachedRenderImage(source.id, source.dataUrl, onInvalidate) : null;
@@ -458,7 +472,11 @@ export function renderSceneNodes(
         }
       }
 
-      // Selection gizmo is rendered as DOM overlay in workspaces.tsx
+      if (node.id === selectedNodeId && node.data.type !== "Node2D") {
+        context.font = "10px monospace";
+        context.fillStyle = "rgba(255,255,255,0.7)";
+        context.fillText(node.name, px, py - 4);
+      }
     }
   }
 }

@@ -43,12 +43,20 @@ export async function exportSceneBin(project: ProjectDocument, scene: SceneDocum
   return bytes;
 }
 
+const NODE_TYPE_NAMES: Record<number, string> = {
+  0: "Root", 1: "Node2D", 2: "Sprite", 3: "TileMap", 4: "CollisionShape", 5: "Area", 6: "Light2D",
+};
+
 export async function exportSceneDebugJson(project: ProjectDocument, scene: SceneDocument): Promise<string> {
   const state = await buildExportState(project, scene);
+  const debugNodes = state.nodes.map(({ writeExt, ...rest }) => ({
+    ...rest,
+    nodeTypeName: NODE_TYPE_NAMES[rest.nodeType] ?? "Unknown",
+  }));
   return JSON.stringify(
     {
       header: { magic: "PSCN", nodeCount: state.nodes.length },
-      nodes: state.nodes,
+      nodes: debugNodes,
       tilesets: state.tilesets,
       chunks: state.chunkDefs,
       strings: state.stringList,

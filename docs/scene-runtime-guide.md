@@ -188,3 +188,46 @@ const char* resolveString(uint32_t index, const PscnStringEntry* entries,
     return stringBlob + entries[index].offset;
 }
 ```
+
+---
+
+## Light2D Runtime
+
+Light2D nodes are **never baked** into tile data. They exist as live scriptable objects processed each frame by the runtime lighting system.
+
+### Variants
+
+| Variant | Value | Behavior |
+|---------|-------|----------|
+| Omni | 0 | Radial light; illuminates all directions equally within `radius` |
+| Directional | 1 | Cone light; illuminates within `coneAngle` degrees centered on `directionAngle` |
+
+### Processing
+
+```cpp
+void processLight(const SceneNode& node, const WorldTransform& wt) {
+    const auto& light = node.ext.light;
+    float radius = fixedToFloat_16_16(light.radius);
+    uint32_t color = light.color;
+    float intensity = fixed88ToFloat(light.intensity);
+    float falloff = fixed88ToFloat(light.falloff);
+
+    if (light.variant == LIGHT_OMNI) {
+        // Apply radial falloff: attenuation = 1 / (1 + dist^falloff)
+        applyOmniLight(wt.x, wt.y, radius, color, intensity, falloff);
+    } else {
+        float dirDeg = fixed88ToFloat(light.directionAngle);
+        float coneDeg = fixed88ToFloat(light.coneAngle);
+        // Only illuminate fragments within the cone
+        applyDirectionalLight(wt.x, wt.y, radius, dirDeg, coneDeg, color, intensity, falloff);
+    }
+}
+```
+
+### PS2 Implementation Notes
+
+- Light2D is a per-frame effect — use GS alpha blending (additive) on affected tile regions
+- For omni lights, compute a bounding box from `(wt.x - radius, wt.y - radius)` to cull unaffected tiles
+- For directional lights, compute a bounding triangle from the cone to further reduce overdraw
+- Falloff can be approximated as a lookup table indexed by distance/radius ratio
+- The `scriptId` field allows attaching behavior (flickering, pulsing, following player) via the script registry

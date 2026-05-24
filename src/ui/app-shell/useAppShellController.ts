@@ -14,7 +14,7 @@ import { clamp, fileNameBase, fnv1a32, saveBlobWithPicker } from "../../utils";
 import { buildAtlasFromProject } from "../../model/selectors";
 import { useAtlasEditor } from "./useAtlasEditor";
 import { useLevelEditor } from "./useLevelEditor";
-import { createNode, findFirstTileMapInScene } from "../../scene/helpers";
+import { createNode, findFirstTileMapInScene, findParent } from "../../scene/helpers";
 
 export function useAppShellController() {
   const { state, dispatch } = useProjectStore();
@@ -224,6 +224,22 @@ export function useAppShellController() {
           if (sel && scn && sel !== scn.root.id) {
             event.preventDefault();
             dispatch({ type: "removeNode", sceneId: scn.id, nodeId: sel });
+          }
+          return;
+        }
+        if ((event.ctrlKey || event.metaKey) && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+          const sel = state.editor.selectedNodeId;
+          const scn = state.project.scenes.find((s) => s.id === state.editor.selectedSceneId);
+          if (sel && scn && sel !== scn.root.id) {
+            const parent = findParent(scn.root, sel);
+            if (parent) {
+              const idx = parent.children.findIndex((c) => c.id === sel);
+              const toIndex = event.key === "ArrowUp" ? idx - 1 : idx + 1;
+              if (toIndex >= 0 && toIndex < parent.children.length) {
+                event.preventDefault();
+                dispatch({ type: "reorderNode", sceneId: scn.id, parentId: parent.id, nodeId: sel, toIndex });
+              }
+            }
           }
           return;
         }
