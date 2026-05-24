@@ -1,9 +1,8 @@
 import type { PointerEvent as ReactPointerEvent, RefObject, WheelEvent as ReactWheelEvent } from "react";
 import type {
   GridSliceOptions,
-  LevelDocument,
-  LevelLayer,
   ManualSliceRect,
+  TileMapNodeData,
   PackedAtlas,
   SliceKind,
   SliceRect,
@@ -193,7 +192,7 @@ export function AtlasWorkspace(props: {
 }
 
 export function LevelWorkspace(props: {
-  level: LevelDocument | null;
+  tileMapData: TileMapNodeData | null;
   levelZoom: number;
   levelPan: { x: number; y: number };
   cursorClass: string;
@@ -220,14 +219,14 @@ export function LevelWorkspace(props: {
   onStagePanMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStagePanEnd: (event: ReactPointerEvent<HTMLDivElement>) => void;
 }) {
-  const { level, rectDragStart: rds, rectDragCurrent: rdc, levelZoom: zoom } = props;
+  const { tileMapData, rectDragStart: rds, rectDragCurrent: rdc, levelZoom: zoom } = props;
 
-  const tileW = level ? level.tileWidth * zoom : 0;
-  const tileH = level ? level.tileHeight * zoom : 0;
+  const tileW = tileMapData ? tileMapData.tileWidth * zoom : 0;
+  const tileH = tileMapData ? tileMapData.tileHeight * zoom : 0;
 
   // Live drag rect overlay (rect-fill and select tools during drag)
   let rectOverlay: React.CSSProperties | null = null;
-  if (level && rds && rdc) {
+  if (tileMapData && rds && rdc) {
     const x1 = Math.min(rds.x, rdc.x);
     const y1 = Math.min(rds.y, rdc.y);
     const x2 = Math.max(rds.x, rdc.x);
@@ -248,7 +247,7 @@ export function LevelWorkspace(props: {
   // Committed selection overlay — persists while select tool is active
   let selectionOverlay: React.CSSProperties | null = null;
   const sel = props.levelSelection;
-  if (level && sel && props.levelTool === "select" && !rds) {
+  if (tileMapData && sel && props.levelTool === "select" && !rds) {
     const x1 = Math.min(sel.x0, sel.x1);
     const y1 = Math.min(sel.y0, sel.y1);
     const x2 = Math.max(sel.x0, sel.x1);
@@ -269,7 +268,7 @@ export function LevelWorkspace(props: {
   // Cursor preview overlay — ghost of brush/tile under cursor
   let cursorOverlay: React.CSSProperties | null = null;
   const ct = props.cursorTile;
-  if (level && ct && (props.levelTool === "brush" || props.levelTool === "erase")) {
+  if (tileMapData && ct && (props.levelTool === "brush" || props.levelTool === "erase")) {
     const w = props.cursorBrushWidth;
     const h = props.cursorBrushHeight;
     const originX = props.cursorBrushWidth > 1 ? ct.x - Math.floor(w / 2) : ct.x;
@@ -293,7 +292,7 @@ export function LevelWorkspace(props: {
 
   return (
     <div className="workspace-content level-workspace">
-      {props.level ? (
+      {props.tileMapData ? (
         <div
           ref={props.stageRef}
           className={`level-stage viewport-stage ${props.cursorClass}`}
@@ -306,8 +305,8 @@ export function LevelWorkspace(props: {
             <div className="viewport-camera" style={{ transform: `translate(${props.levelPan.x}px, ${props.levelPan.y}px)`, position: "relative" }}>
               <canvas
                 ref={props.levelCanvasRef}
-                width={props.level.mapWidthTiles * props.level.tileWidth * props.levelZoom}
-                height={props.level.mapHeightTiles * props.level.tileHeight * props.levelZoom}
+                width={((props.tileMapData?.mapWidthTiles ?? 0) * (props.tileMapData?.tileWidth ?? 0) * props.levelZoom)}
+                height={((props.tileMapData?.mapHeightTiles ?? 0) * (props.tileMapData?.tileHeight ?? 0) * props.levelZoom)}
                 onPointerDown={props.onCanvasPointerDown}
                 onPointerMove={props.onCanvasPointerMove}
                 onPointerUp={props.onCanvasPointerUp}

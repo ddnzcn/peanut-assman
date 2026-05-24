@@ -32,17 +32,14 @@ import {
 import { useAppShellController } from "../app-shell/useAppShellController";
 import { AtlasWorkspace, LevelWorkspace } from "../app-shell/workspaces";
 import { AnimationWorkspace } from "../app-shell/timeline";
-import { LevelNavigator } from "../app-shell/navigator";
 import {
   AtlasInspector,
-  LevelInspector,
-  LevelSettingsInspector,
 } from "../app-shell/inspectors";
 import { AtlasAssetsPanel, LevelAssetPicker } from "../app-shell/pickers";
 import { TileAssetPreview } from "../app-shell/shared";
 import { clamp } from "../../utils";
-import { sampleBrushFromLevel } from "../../level/editor";
-import type { AnimatedTileAsset, LevelDocument, LevelLayer, ProjectDocument, TileBrush, TilesetTileAsset } from "../../types";
+import { sampleBrushFromTileMap } from "../../level/editor";
+import type { AnimatedTileAsset, ProjectDocument, TileBrush, TileMapNodeData, TilesetTileAsset } from "../../types";
 import "./styles.css";
 
 // ---------- Animated tile palette cell ----------
@@ -131,8 +128,7 @@ interface TilePaletteProps {
   savedBrushes: TileBrush[];
   activeBrushId: number | null;
   levelSelection: { x0: number; y0: number; x1: number; y1: number } | null;
-  level: LevelDocument | null;
-  layer: LevelLayer | null;
+  tileMapData: TileMapNodeData | null;
   onSaveBrush: (brush: Omit<TileBrush, "id">) => void;
   onDeleteBrush: (id: number) => void;
   onSelectBrush: (id: number | null) => void;
@@ -149,8 +145,7 @@ function TilePalette({
   savedBrushes,
   activeBrushId,
   levelSelection,
-  level,
-  layer,
+  tileMapData,
   onSaveBrush,
   onDeleteBrush,
   onSelectBrush,
@@ -260,13 +255,13 @@ function TilePalette({
         <div className="pn-tile-palette-section-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span>Brushes</span>
           <div style={{ display: "flex", gap: 4 }}>
-            {levelSelection && level && layer && (
+            {levelSelection && tileMapData && (
               <button
                 className="pn-tool-btn"
                 style={{ width: 18, height: 18, fontSize: "0.65rem", padding: 0 }}
                 title="Save selection as brush"
                 onClick={() => {
-                  const sampled = sampleBrushFromLevel(level, layer, levelSelection.x0, levelSelection.y0, levelSelection.x1, levelSelection.y1);
+                  const sampled = sampleBrushFromTileMap(tileMapData, levelSelection.x0, levelSelection.y0, levelSelection.x1, levelSelection.y1);
                   const w = Math.abs(levelSelection.x1 - levelSelection.x0) + 1;
                   onSaveBrush({ name: `brush_${String(savedBrushes.length + 1).padStart(2, "0")}`, ...sampled, width: w });
                 }}
@@ -351,8 +346,9 @@ export function AppShell() {
   const {
     state,
     dispatch,
-    level,
-    layer,
+    scene,
+    selectedNode,
+    tileMapData,
     atlas,
     selectedTerrainSet,
     selectedSourceImage,
@@ -430,7 +426,7 @@ export function AppShell() {
     rectDragStart,
     rectDragCurrent,
     createExampleProject,
-    createLevelLayer,
+    createNode,
     createAnimation,
     handleAnimationTick,
     levelSelection,
@@ -551,7 +547,7 @@ export function AppShell() {
               <button
                 className="app-menu-item primary app-menu-item-primary"
                 onClick={exportLevel}
-                disabled={!level}
+                disabled={!tileMapData}
               >
                 <Download size={14} />
                 <span>Export Level</span>
@@ -562,86 +558,17 @@ export function AppShell() {
         </div>
       </header>
 
-      {/* ---- LEFT NAVIGATOR (level mode only) ---- */}
-      {workspace === "level" && level ? (
+      {/* ---- LEFT NAVIGATOR ---- */}
+      {workspace === "level" && scene ? (
         <aside className="pn-sidebar-left">
-          <LevelNavigator
-            levels={state.project.levels}
-            selectedLevelId={level.id}
-            selectedLayerId={layer?.id ?? null}
-            onSelectLevel={(levelId) => {
-              dispatch({ type: "setSelectedLevel", levelId });
-              dispatch({ type: "setSelectedLayer", layerId: null });
-            }}
-            onSelectLayer={(layerId) => dispatch({ type: "setSelectedLayer", layerId })}
-            onRenameLevel={(levelId, name) => {
-              const target = state.project.levels.find((e) => e.id === levelId);
-              if (!target) return;
-              dispatch({ type: "updateLevel", level: { ...target, name } });
-            }}
-            onRenameLayer={(layerId, name) =>
-              dispatch({
-                type: "updateLevel",
-                level: {
-                  ...level,
-                  layers: level.layers.map((e) => (e.id === layerId ? { ...e, name } : e)),
-                },
-              })
-            }
-            onAddLevel={() => {
-              const nextId = `level-${state.project.idCounters.level}`;
-              const layerBase = state.project.idCounters.layer;
-              dispatch({
-                type: "addLevel",
-                level: {
-                  id: nextId,
-                  name: `level${String(state.project.idCounters.level).padStart(2, "0")}`,
-                  mapWidthTiles: level.mapWidthTiles,
-                  mapHeightTiles: level.mapHeightTiles,
-                  tileWidth: level.tileWidth,
-                  tileHeight: level.tileHeight,
-                  chunkWidthTiles: level.chunkWidthTiles,
-                  chunkHeightTiles: level.chunkHeightTiles,
-                  tileIds: [...level.tileIds],
-                  tilesetIds: [...level.tilesetIds],
-                  layers: [
-                    createLevelLayer(`layer-${layerBase}`, "Ground", level.mapWidthTiles, level.mapHeightTiles, { hasTiles: true }),
-                    createLevelLayer(`layer-${layerBase + 1}`, "Gameplay", level.mapWidthTiles, level.mapHeightTiles, { hasCollision: true, hasMarkers: true }),
-                    createLevelLayer(`layer-${layerBase + 2}`, "Foreground", level.mapWidthTiles, level.mapHeightTiles, { hasTiles: true }),
-                  ],
-                  chunks: {},
-                  collisions: [],
-                  markers: [],
-                },
-              });
-            }}
-            onRemoveLevel={() => dispatch({ type: "removeLevel", levelId: level.id })}
-            onAddLayer={() =>
-              dispatch({
-                type: "addLayer",
-                levelId: level.id,
-                layer: createLevelLayer(
-                  `layer-${state.project.idCounters.layer}`,
-                  `Layer ${level.layers.length + 1}`,
-                  level.mapWidthTiles,
-                  level.mapHeightTiles,
-                  { hasTiles: true },
-                ),
-              })
-            }
-            onMoveLayerUp={() =>
-              layer ? dispatch({ type: "reorderLayer", levelId: level.id, layerId: layer.id, direction: "up" }) : undefined
-            }
-            onMoveLayerDown={() =>
-              layer ? dispatch({ type: "reorderLayer", levelId: level.id, layerId: layer.id, direction: "down" }) : undefined
-            }
-            onReorderLayer={(layerId, toIndex) =>
-              dispatch({ type: "reorderLayer", levelId: level.id, layerId, toIndex })
-            }
-            onRemoveLayer={() =>
-              layer ? dispatch({ type: "removeLayer", levelId: level.id, layerId: layer.id }) : undefined
-            }
-          />
+          <div style={{ padding: "0.5rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+            <strong>{scene.name}</strong>
+            <div style={{ marginTop: "0.5rem" }}>
+              {/* TODO: SceneTree component */}
+              <p>Scene tree (coming soon)</p>
+              {selectedNode && <p>Selected: {selectedNode.name} ({selectedNode.data.type})</p>}
+            </div>
+          </div>
         </aside>
       ) : workspace === "atlas" ? (
         <aside className="pn-sidebar-left">
@@ -723,7 +650,7 @@ export function AppShell() {
           />
         ) : (
           <LevelWorkspace
-            level={level}
+            tileMapData={tileMapData}
             levelZoom={state.editor.levelZoom}
             levelPan={levelPan}
             levelCanvasRef={levelCanvasRef}
@@ -811,50 +738,22 @@ export function AppShell() {
                 selectedSliceCount={state.editor.selectedSliceIds.length}
                 onAddSelectedToAtlas={addSelectedSlicesToAtlas}
                 onAddSelectedToLevel={addSelectedSlicesToLevel}
-                currentLevelName={level?.name ?? null}
+                currentLevelName={selectedNode?.name ?? null}
                 onCreateSlices={createAtlasSlices}
                 onSetModule={setAtlasModule}
               />
-            ) : level ? (
-              layer ? (
-                <LevelInspector
-                  level={level}
-                  layer={layer}
-                  levelTool={state.editor.levelTool}
-                  dispatch={dispatch}
-                  project={state.project}
-                  recentTileIds={recentTileIds}
-                  recentTerrainSetIds={recentTerrainSetIds}
-                  onSelectRecentTile={(tileId) => {
-                    setSelectedPaintTileId(tileId);
-                    pushRecentTile(tileId);
-                    dispatch({ type: "setLevelTool", tool: "brush" });
-                  }}
-                  onSelectRecentTerrainSet={(terrainSetId) => {
-                    dispatch({ type: "setSelectedTerrainSet", terrainSetId });
-                    pushRecentTerrainSet(terrainSetId);
-                    dispatch({ type: "setLevelTool", tool: "terrain" });
-                  }}
-                />
-              ) : (
-                <LevelSettingsInspector
-                  level={level}
-                  dispatch={dispatch}
-                  project={state.project}
-                  recentTileIds={recentTileIds}
-                  recentTerrainSetIds={recentTerrainSetIds}
-                  onSelectRecentTile={(tileId) => {
-                    setSelectedPaintTileId(tileId);
-                    pushRecentTile(tileId);
-                    dispatch({ type: "setLevelTool", tool: "brush" });
-                  }}
-                  onSelectRecentTerrainSet={(terrainSetId) => {
-                    dispatch({ type: "setSelectedTerrainSet", terrainSetId });
-                    pushRecentTerrainSet(terrainSetId);
-                    dispatch({ type: "setLevelTool", tool: "terrain" });
-                  }}
-                />
-              )
+            ) : selectedNode ? (
+              <div style={{ padding: "0.5rem", fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                <p><strong>{selectedNode.name}</strong> ({selectedNode.data.type})</p>
+                {/* TODO: NodeInspector per type */}
+                {tileMapData && (
+                  <div style={{ marginTop: "0.5rem" }}>
+                    <p>Map: {tileMapData.mapWidthTiles}x{tileMapData.mapHeightTiles}</p>
+                    <p>Tile: {tileMapData.tileWidth}x{tileMapData.tileHeight}</p>
+                    <p>Projection: {tileMapData.projection}</p>
+                  </div>
+                )}
+              </div>
             ) : null}
             </div>
           </div>
@@ -886,8 +785,7 @@ export function AppShell() {
                 savedBrushes={state.editor.savedBrushes ?? []}
                 activeBrushId={state.editor.activeBrushId ?? null}
                 levelSelection={levelSelection}
-                level={level}
-                layer={layer}
+                tileMapData={tileMapData}
                 onSaveBrush={(brush) => dispatch({ type: "saveBrush", brush })}
                 onDeleteBrush={(brushId) => dispatch({ type: "deleteBrush", brushId })}
                 onSelectBrush={(brushId) => {
@@ -907,7 +805,7 @@ export function AppShell() {
       {workspace === "level" && assetTrayOpen && (
         <LevelAssetPicker
           project={state.project}
-          level={level}
+          tileMapData={tileMapData}
           sourceImages={state.project.sourceImages}
           selectedSourceImageId={selectedSourceImage?.id ?? null}
           selectedSliceIds={state.editor.selectedSliceIds}
@@ -948,14 +846,14 @@ export function AppShell() {
           onSetTerrainSet={(terrainSetId) => dispatch({ type: "setSelectedTerrainSet", terrainSetId })}
           onRemoveTerrainSet={(terrainSetId) => dispatch({ type: "removeTerrainSet", terrainSetId })}
           onCreateTerrainSet={() => {
-            if (!level) return;
+            if (!selectedNode) return;
             dispatch({
               type: "upsertTerrainSet",
               terrainSet: {
                 id: state.project.idCounters.terrainSet,
-                name: `${level.name}_terrain`,
+                name: `${selectedNode.name}_terrain`,
                 tilesetId: 0,
-                levelId: level.id,
+                sceneNodeId: selectedNode.id,
                 slots: { 0: selectedPaintTileId || effectiveLevelTileIds[0] || 0 },
                 mode: "cardinal",
                 blobMap: {},
@@ -1036,16 +934,11 @@ export function AppShell() {
                 <V2ToolBtn label="Fill" shortcut="G" active={state.editor.levelTool === "bucket"} onClick={() => dispatch({ type: "setLevelTool", tool: "bucket" })}>
                   <PaintBucket />
                 </V2ToolBtn>
-                <V2ToolBtn label="Collision" shortcut="C" active={state.editor.levelTool === "collisionRect"} onClick={() => dispatch({ type: "setLevelTool", tool: "collisionRect" })}>
-                  <Shield />
-                </V2ToolBtn>
-                <V2ToolBtn
-                  label="Marker"
-                  shortcut="M"
-                  active={state.editor.levelTool === "markerPoint" || state.editor.levelTool === "markerRect"}
-                  onClick={() => dispatch({ type: "setLevelTool", tool: "markerPoint" })}
-                >
+                <V2ToolBtn label="Place Object" shortcut="O" active={state.editor.levelTool === "objectPlace"} onClick={() => dispatch({ type: "setLevelTool", tool: "objectPlace" })}>
                   <MapPin />
+                </V2ToolBtn>
+                <V2ToolBtn label="Select Object" shortcut="S" active={state.editor.levelTool === "objectSelect"} onClick={() => dispatch({ type: "setLevelTool", tool: "objectSelect" })}>
+                  <MousePointer2 />
                 </V2ToolBtn>
                 <V2ToolBtn label="Hand" shortcut="H" active={state.editor.levelTool === "hand"} onClick={() => dispatch({ type: "setLevelTool", tool: "hand" })}>
                   <Move />

@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { getEffectiveLevelTileIds } from "../../model/selectors";
+import { getEffectiveTileMapTileIds } from "../../model/selectors";
 import { getTerrainSetMarkerTileId } from "../../terrain";
 import type {
   AnimatedTileAsset,
   AutotileMode,
-  LevelDocument,
   LevelPickerTab,
   ProjectDocument,
   SliceAsset,
   SourceImageAsset,
   TerrainSet,
+  TileMapNodeData,
   TilesetTileAsset,
 } from "../../types";
 import { buildTileGridLookup, parseTileGridPosition } from "./tileGrid";
@@ -72,7 +72,7 @@ function buildTileRegionSelection(tileEntries: TileEntry[], startTileId: number,
 
 export function LevelAssetPicker(props: {
   project: ProjectDocument;
-  level: LevelDocument | null;
+  tileMapData: TileMapNodeData | null;
   sourceImages: SourceImageAsset[];
   selectedSourceImageId: string | null;
   selectedSliceIds: string[];
@@ -114,7 +114,7 @@ export function LevelAssetPicker(props: {
   const [regionEndTileId, setRegionEndTileId] = useState<number | null>(null);
   const modalRef = useRef<HTMLElement | null>(null);
   const search = props.search.trim().toLowerCase();
-  const effectiveLevelTileIds = getEffectiveLevelTileIds(props.project, props.level);
+  const effectiveLevelTileIds = getEffectiveTileMapTileIds(props.project, props.tileMapData);
   const selectedTerrainSet =
     props.terrainSets.find((terrainSet) => terrainSet.id === props.selectedTerrainSetId) ??
     props.terrainSets[0] ??
@@ -129,7 +129,7 @@ export function LevelAssetPicker(props: {
   );
   const tileEntries = useMemo(
     () =>
-      props.level
+      props.tileMapData
         ? effectiveLevelTileIds
             .map((tileId) => props.project.tiles.find((tile) => tile.tileId === tileId))
             .filter((tile): tile is TilesetTileAsset => Boolean(tile))
@@ -148,7 +148,7 @@ export function LevelAssetPicker(props: {
               };
             })
         : [],
-    [effectiveLevelTileIds, props.level, props.project.slices, props.project.sourceImages, props.project.tiles],
+    [effectiveLevelTileIds, props.tileMapData, props.project.slices, props.project.sourceImages, props.project.tiles],
   );
   const filteredTerrainSets = props.terrainSets.filter(
     (terrainSet) => !search || terrainSet.name.toLowerCase().includes(search),
@@ -361,7 +361,7 @@ export function LevelAssetPicker(props: {
           <>
             <div className="picker-section-header">
               <div className="picker-tile-toolbar">
-                <strong>{props.level?.name ?? "No level selected"}</strong>
+                <strong>{props.tileMapData ? "Tile Palette" : "No TileMap selected"}</strong>
                 <div className="picker-filter-row">
                   {(["all", "recent", "pinned"] as const).map((filter) => (
                     <button
