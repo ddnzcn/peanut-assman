@@ -14,13 +14,17 @@ import { clamp, fileNameBase, fnv1a32, saveBlobWithPicker } from "../../utils";
 import { buildAtlasFromProject } from "../../model/selectors";
 import { useAtlasEditor } from "./useAtlasEditor";
 import { useLevelEditor } from "./useLevelEditor";
-import { createNode } from "../../scene/helpers";
+import { createNode, findFirstTileMapInScene } from "../../scene/helpers";
 
 export function useAppShellController() {
   const { state, dispatch } = useProjectStore();
   const scene = getSelectedScene(state);
   const selectedNode = getSelectedNode(state);
   const tileMapData = getSelectedTileMapData(state);
+  const sceneTileMapData = useMemo(
+    () => scene ? findFirstTileMapInScene(scene.root) : null,
+    [scene],
+  );
   const selectedTerrainSet = getSelectedTerrainSet(state);
   const selectedSourceImage =
     state.project.sourceImages.find((source) => source.id === state.editor.selectedSourceImageId) ??
@@ -126,6 +130,7 @@ export function useAppShellController() {
     scene,
     selectedNode,
     tileMapData,
+    sceneTileMapData,
     selectedTerrainSet,
     selectedPaintTileId,
     setSelectedPaintTileId,
@@ -494,6 +499,7 @@ export function useAppShellController() {
     scene,
     selectedNode,
     tileMapData,
+    sceneTileMapData,
     selectedTerrainSet,
     selectedSourceImage,
     atlasSprites,

@@ -29,6 +29,7 @@ interface LevelEditorParams {
   scene: SceneDocument | null;
   selectedNode: SceneNode | null;
   tileMapData: TileMapNodeData | null;
+  sceneTileMapData: TileMapNodeData | null;
   selectedTerrainSet: TerrainSet | null;
   selectedPaintTileId: number;
   setSelectedPaintTileId: (id: number) => void;
@@ -45,6 +46,7 @@ export function useLevelEditor({
   scene,
   selectedNode,
   tileMapData,
+  sceneTileMapData,
   selectedTerrainSet,
   selectedPaintTileId,
   setSelectedPaintTileId,
@@ -62,7 +64,7 @@ export function useLevelEditor({
   const levelAnimRafRef = useRef<number | null>(null);
   const levelAnimStartRef = useRef<number | null>(null);
   const levelAnimTimeRef = useRef<number>(0);
-  const levelRenderStateRef = useRef({ project: state.project, scene, tileMapData, selectedNodeId: state.editor.selectedNodeId, zoom: state.editor.levelZoom });
+  const levelRenderStateRef = useRef({ project: state.project, scene, sceneTileMapData, selectedNodeId: state.editor.selectedNodeId, zoom: state.editor.levelZoom });
 
   const [cursorTile, setCursorTile] = useState<{ x: number; y: number } | null>(null);
   const [objectPlaceType, setObjectPlaceType] = useState<SceneNodeType>("Sprite");
@@ -73,7 +75,7 @@ export function useLevelEditor({
   const [levelSelection, setLevelSelection] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
   useEffect(() => {
-    levelRenderStateRef.current = { project: state.project, scene, tileMapData, selectedNodeId: state.editor.selectedNodeId, zoom: state.editor.levelZoom };
+    levelRenderStateRef.current = { project: state.project, scene, sceneTileMapData, selectedNodeId: state.editor.selectedNodeId, zoom: state.editor.levelZoom };
   }, [state.project, tileMapData, state.editor.levelZoom]);
 
   // Static canvas render
@@ -82,10 +84,10 @@ export function useLevelEditor({
     let cancelled = false;
     const redraw = () => {
       if (cancelled) return;
-      if (webglCanvasRef.current && tileMapData) {
-        renderTilesWebGL(webglCanvasRef.current, state.project, tileMapData, state.editor.levelZoom);
+      if (webglCanvasRef.current && sceneTileMapData) {
+        renderTilesWebGL(webglCanvasRef.current, state.project, sceneTileMapData, state.editor.levelZoom);
       }
-      renderLevelCanvas(levelCanvasRef.current, state.project, tileMapData, state.editor.levelZoom, undefined, () => {
+      renderLevelCanvas(levelCanvasRef.current, state.project, sceneTileMapData, state.editor.levelZoom, undefined, () => {
         requestAnimationFrame(redraw);
       }, !!webglCanvasRef.current);
       renderSceneNodes(levelCanvasRef.current, state.project, scene, state.editor.selectedNodeId, state.editor.levelZoom);
@@ -96,7 +98,7 @@ export function useLevelEditor({
       cancelled = true;
       cancelAnimationFrame(frameId);
     };
-  }, [tileMapData, state.project, state.editor.levelZoom, state.editor.workspace]);
+  }, [sceneTileMapData, scene, state.project, state.editor.levelZoom, state.editor.workspace, state.editor.selectedNodeId]);
 
   // RAF loop for animated tiles
   useEffect(() => {
@@ -113,11 +115,11 @@ export function useLevelEditor({
     const tick = (now: number) => {
       if (levelAnimStartRef.current === null) levelAnimStartRef.current = now;
       levelAnimTimeRef.current = now - levelAnimStartRef.current;
-      const { project, scene: s, tileMapData: tm, selectedNodeId: selId, zoom } = levelRenderStateRef.current;
-      if (webglCanvasRef.current && tm) {
-        renderTilesWebGL(webglCanvasRef.current, project, tm, zoom, levelAnimTimeRef.current);
+      const { project, scene: s, sceneTileMapData: stm, selectedNodeId: selId, zoom } = levelRenderStateRef.current;
+      if (webglCanvasRef.current && stm) {
+        renderTilesWebGL(webglCanvasRef.current, project, stm, zoom, levelAnimTimeRef.current);
       }
-      renderLevelCanvas(levelCanvasRef.current, project, tm, zoom, levelAnimTimeRef.current, undefined, !!webglCanvasRef.current);
+      renderLevelCanvas(levelCanvasRef.current, project, stm, zoom, levelAnimTimeRef.current, undefined, !!webglCanvasRef.current);
       renderSceneNodes(levelCanvasRef.current, project, s, selId, zoom);
       levelAnimRafRef.current = requestAnimationFrame(tick);
     };
@@ -134,11 +136,12 @@ export function useLevelEditor({
   // Center viewport
   useEffect(() => {
     const stage = levelStageRef.current;
-    if (!stage || !tileMapData || state.editor.workspace !== "level") return;
+    const tm = sceneTileMapData;
+    if (!stage || !tm || state.editor.workspace !== "level") return;
     const centerViewport = () => {
       setLevelPan({
-        x: (stage.clientWidth - tileMapData.mapWidthTiles * tileMapData.tileWidth * state.editor.levelZoom) * 0.5,
-        y: (stage.clientHeight - tileMapData.mapHeightTiles * tileMapData.tileHeight * state.editor.levelZoom) * 0.5,
+        x: (stage.clientWidth - tm.mapWidthTiles * tm.tileWidth * state.editor.levelZoom) * 0.5,
+        y: (stage.clientHeight - tm.mapHeightTiles * tm.tileHeight * state.editor.levelZoom) * 0.5,
       });
     };
     const initialFrame = requestAnimationFrame(() => {

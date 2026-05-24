@@ -193,6 +193,7 @@ export function AtlasWorkspace(props: {
 
 export function LevelWorkspace(props: {
   tileMapData: TileMapNodeData | null;
+  sceneTileMapData: TileMapNodeData | null;
   levelZoom: number;
   levelPan: { x: number; y: number };
   cursorClass: string;
@@ -293,7 +294,7 @@ export function LevelWorkspace(props: {
 
   return (
     <div className="workspace-content level-workspace">
-      {props.tileMapData ? (
+      {props.sceneTileMapData ? (
         <div
           ref={props.stageRef}
           className={`level-stage viewport-stage ${props.cursorClass}`}
@@ -306,14 +307,14 @@ export function LevelWorkspace(props: {
             <div className="viewport-camera" style={{ transform: `translate(${props.levelPan.x}px, ${props.levelPan.y}px)`, position: "relative" }}>
               <canvas
                 ref={props.webglCanvasRef}
-                width={((props.tileMapData?.mapWidthTiles ?? 0) * (props.tileMapData?.tileWidth ?? 0) * props.levelZoom)}
-                height={((props.tileMapData?.mapHeightTiles ?? 0) * (props.tileMapData?.tileHeight ?? 0) * props.levelZoom)}
+                width={((props.sceneTileMapData?.mapWidthTiles ?? 0) * (props.sceneTileMapData?.tileWidth ?? 0) * props.levelZoom)}
+                height={((props.sceneTileMapData?.mapHeightTiles ?? 0) * (props.sceneTileMapData?.tileHeight ?? 0) * props.levelZoom)}
                 style={{ position: "absolute", top: 0, left: 0, imageRendering: "pixelated" }}
               />
               <canvas
                 ref={props.levelCanvasRef}
-                width={((props.tileMapData?.mapWidthTiles ?? 0) * (props.tileMapData?.tileWidth ?? 0) * props.levelZoom)}
-                height={((props.tileMapData?.mapHeightTiles ?? 0) * (props.tileMapData?.tileHeight ?? 0) * props.levelZoom)}
+                width={((props.sceneTileMapData?.mapWidthTiles ?? 0) * (props.sceneTileMapData?.tileWidth ?? 0) * props.levelZoom)}
+                height={((props.sceneTileMapData?.mapHeightTiles ?? 0) * (props.sceneTileMapData?.tileHeight ?? 0) * props.levelZoom)}
                 style={{ position: "relative", background: "transparent" }}
                 onPointerDown={props.onCanvasPointerDown}
                 onPointerMove={props.onCanvasPointerMove}

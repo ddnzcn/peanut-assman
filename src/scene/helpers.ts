@@ -250,6 +250,15 @@ export function findAncestorTileMap(
   return null;
 }
 
+export function findFirstTileMapInScene(root: SceneNode): TileMapNodeData | null {
+  if (root.data.type === "TileMap") return root.data;
+  for (const child of root.children) {
+    const found = findFirstTileMapInScene(child);
+    if (found) return found;
+  }
+  return null;
+}
+
 export function countNodes(root: SceneNode): number {
   let count = 1;
   for (const child of root.children) {

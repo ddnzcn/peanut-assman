@@ -351,6 +351,7 @@ export function AppShell() {
     scene,
     selectedNode,
     tileMapData,
+    sceneTileMapData,
     atlas,
     selectedTerrainSet,
     selectedSourceImage,
@@ -655,6 +656,7 @@ export function AppShell() {
         ) : (
           <LevelWorkspace
             tileMapData={tileMapData}
+            sceneTileMapData={sceneTileMapData}
             levelZoom={state.editor.levelZoom}
             levelPan={levelPan}
             levelCanvasRef={levelCanvasRef}
