@@ -69,25 +69,25 @@ function SlicerSurface(props: SlicerSurfaceProps) {
             {props.gridPreview.map((entry, index) => (
               <div
                 key={index}
-                className="slicer-preview-rect"
+                className="slice-outline"
                 style={rectStyle(entry.rect, props.zoom)}
               />
             ))}
             {props.manualRects.map((entry, index) => (
               <div
                 key={index}
-                className={`slicer-manual-rect${index === props.selectedManualRectIndex ? " selected" : ""}`}
+                className={`slice-outline${index === props.selectedManualRectIndex ? " selected" : ""}`}
                 style={rectStyle(entry, props.zoom)}
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   props.onManualRectSelect(index);
                 }}
               >
-                <span className="slicer-manual-rect-label">{entry.name}</span>
+                <span>{entry.name}</span>
               </div>
             ))}
             {props.dragRect && (
-              <div className="slicer-drag-rect" style={rectStyle(props.dragRect, props.zoom)} />
+              <div className="slice-outline pending" style={rectStyle(props.dragRect, props.zoom)} />
             )}
           </div>
         </div>
@@ -117,7 +117,7 @@ function PackPreview(props: {
   return (
     <div
       ref={props.stageRef}
-      className="pack-stage viewport-stage"
+      className="atlas-pack-stage viewport-stage"
       onWheel={props.onWheel}
       onPointerDown={props.onPanStart}
       onPointerMove={props.onPanMove}
