@@ -78,12 +78,19 @@ export function useObjectEditor({
     const drag = dragRef.current;
     const dx = pixel.x - drag.startX;
     const dy = pixel.y - drag.startY;
+    let newX = drag.origX + dx;
+    let newY = drag.origY + dy;
+    if (event.ctrlKey || event.metaKey) {
+      const gridSize = 16;
+      newX = Math.round(newX / gridSize) * gridSize;
+      newY = Math.round(newY / gridSize) * gridSize;
+    }
     const currentTransform = findNode(scene.root, drag.nodeId)?.transform ?? { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
     dispatch({
       type: "updateSceneNodeSilent",
       sceneId: scene.id,
       nodeId: drag.nodeId,
-      patch: { transform: { ...currentTransform, x: drag.origX + dx, y: drag.origY + dy } },
+      patch: { transform: { ...currentTransform, x: newX, y: newY } },
     });
     return true;
   }

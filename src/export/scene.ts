@@ -10,7 +10,7 @@ const TILEMAP_EXT_SIZE = 24;
 const SPRITE_EXT_SIZE = 12;
 const COLLISION_EXT_SIZE = 16;
 const AREA_EXT_SIZE = 16;
-const LIGHT_EXT_SIZE = 12;
+const LIGHT_EXT_SIZE = 20;
 const TILESET_DEF_SIZE = 28;
 const TILESET_REMAP_ENTRY_SIZE = 4;
 const CHUNK_DEF_SIZE = 20;
@@ -223,6 +223,11 @@ async function buildExportState(project: ProjectDocument, scene: SceneDocument) 
         v.setUint32(o + 4, parseInt(d.color.replace("#", ""), 16) >>> 0, true);
         v.setUint16(o + 8, packFixed88(d.intensity), true);
         v.setUint16(o + 10, packFixed88(d.falloff), true);
+        v.setUint8(o + 12, d.variant === "directional" ? 1 : 0);
+        v.setUint8(o + 13, 0);
+        v.setInt16(o + 14, packFixed88(d.directionAngle ?? 0), true);
+        v.setInt16(o + 16, packFixed88(d.coneAngle ?? 45), true);
+        v.setInt16(o + 18, 0, true);
       };
     }
 

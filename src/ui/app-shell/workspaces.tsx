@@ -342,6 +342,10 @@ export function LevelWorkspace(props: {
   type HandleEdge = "right" | "bottom" | "corner";
   const resizeDragRef = useRef<{ edge: HandleEdge; startX: number; startY: number; origW: number; origH: number } | null>(null);
 
+  // Gizmo rotation state
+  const rotationDragRef = useRef<{ centerX: number; centerY: number; startAngle: number; origRotation: number } | null>(null);
+  const gizmoContainerRef = useRef<HTMLDivElement>(null);
+
   function onHandlePointerDown(e: React.PointerEvent, edge: HandleEdge, origW: number, origH: number) {
     e.stopPropagation();
     e.preventDefault();
@@ -380,6 +384,34 @@ export function LevelWorkspace(props: {
     resizeDragRef.current = null;
   }
 
+  function onRotatePointerDown(e: React.PointerEvent, centerX: number, centerY: number) {
+    e.stopPropagation();
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    const dx = e.clientX - centerX;
+    const dy = e.clientY - centerY;
+    const startAngle = Math.atan2(dy, dx);
+    const origRotation = selectedNode?.transform.rotation ?? 0;
+    rotationDragRef.current = { centerX, centerY, startAngle, origRotation };
+  }
+
+  function onRotatePointerMove(e: React.PointerEvent) {
+    const drag = rotationDragRef.current;
+    if (!drag || !selectedNode || !scene) return;
+    const dx = e.clientX - drag.centerX;
+    const dy = e.clientY - drag.centerY;
+    const currentAngle = Math.atan2(dy, dx);
+    let deltaDeg = (currentAngle - drag.startAngle) * (180 / Math.PI);
+    if (e.shiftKey) deltaDeg = Math.round(deltaDeg / 15) * 15;
+    const newRotation = Math.round((drag.origRotation + deltaDeg) * 10) / 10;
+    props.dispatch({ type: "updateSceneNodeSilent", sceneId: scene.id, nodeId: selectedNode.id, patch: { transform: { ...selectedNode.transform, rotation: newRotation } } });
+  }
+
+  function onRotatePointerUp(e: React.PointerEvent) {
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    rotationDragRef.current = null;
+  }
+
   // Gizmo for selected node
   let gizmo: React.ReactNode = null;
   if (selectedNode && scene && selectedNode.data.type !== "Root") {
@@ -402,9 +434,30 @@ export function LevelWorkspace(props: {
       cursor, pointerEvents: canResize ? "auto" : "none",
     });
 
+    const rotHandleOffset = 28;
+
     gizmo = (
-      <div style={{ position: "absolute", left: gx - 2, top: gy - 2, width: gw + 4, height: gh + 4, pointerEvents: "none" }}>
+      <div ref={gizmoContainerRef} style={{ position: "absolute", left: gx - 2, top: gy - 2, width: gw + 4, height: gh + 4, pointerEvents: "none", transform: wt.rotation ? `rotate(${wt.rotation}deg)` : undefined, transformOrigin: "center center" }}>
         <div style={{ position: "absolute", inset: 0, border: "1.5px solid rgba(135,197,255,0.9)", boxSizing: "border-box" }} />
+
+        {/* Rotation stem line */}
+        <div style={{ position: "absolute", left: (gw + 4) / 2, top: -rotHandleOffset, width: 1, height: rotHandleOffset, background: "rgba(135,197,255,0.6)", pointerEvents: "none" }} />
+        {/* Rotation handle */}
+        <div
+          style={{
+            position: "absolute", left: (gw + 4) / 2 - 5, top: -rotHandleOffset - 5,
+            width: 10, height: 10, borderRadius: "50%",
+            background: "#fff", border: "1.5px solid rgba(135,197,255,1)", boxSizing: "border-box",
+            cursor: "grab", pointerEvents: "auto",
+          }}
+          onPointerDown={(e) => {
+            const rect = gizmoContainerRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            onRotatePointerDown(e, rect.left + rect.width / 2, rect.top + rect.height / 2);
+          }}
+          onPointerMove={onRotatePointerMove}
+          onPointerUp={onRotatePointerUp}
+        />
 
         {/* Right edge */}
         <div style={handleStyle(gw + 4 - hh - 1, (gh + 4) / 2 - hh, "ew-resize")}

@@ -18,6 +18,7 @@ function DraftInput(props: {
   value: number;
   onCommit: (v: number) => void;
   min?: number;
+  max?: number;
   step?: number;
   label?: string;
 }) {
@@ -26,7 +27,8 @@ function DraftInput(props: {
   function commit(v: string) {
     const n = Number(v);
     if (Number.isNaN(n)) { setDraft(String(props.value)); return; }
-    const clamped = props.min !== undefined ? Math.max(props.min, n) : n;
+    let clamped = props.min !== undefined ? Math.max(props.min, n) : n;
+    clamped = props.max !== undefined ? Math.min(props.max, clamped) : clamped;
     props.onCommit(clamped);
     setDraft(String(clamped));
   }
@@ -255,6 +257,13 @@ function LightInspector({ data, onUpdate }: { data: Light2DNodeData; onUpdate: (
   return (
     <>
       <div className="inspector-section-label">Light 2D</div>
+      <label>
+        Variant
+        <select value={data.variant ?? "omni"} onChange={(e) => onUpdate({ ...data, variant: e.target.value as "omni" | "directional" })}>
+          <option value="omni">Omni</option>
+          <option value="directional">Directional</option>
+        </select>
+      </label>
       <label>Radius <DraftInput value={data.radius} min={1} onCommit={(v) => onUpdate({ ...data, radius: v })} /></label>
       <label>
         Color
@@ -266,6 +275,12 @@ function LightInspector({ data, onUpdate }: { data: Light2DNodeData; onUpdate: (
       </label>
       <label>Intensity <DraftInput value={data.intensity} step={0.1} min={0} onCommit={(v) => onUpdate({ ...data, intensity: v })} /></label>
       <label>Falloff <DraftInput value={data.falloff} step={0.1} min={0} onCommit={(v) => onUpdate({ ...data, falloff: v })} /></label>
+      {(data.variant ?? "omni") === "directional" && (
+        <>
+          <label>Direction (°) <DraftInput value={data.directionAngle ?? 0} step={1} onCommit={(v) => onUpdate({ ...data, directionAngle: v })} /></label>
+          <label>Cone Angle (°) <DraftInput value={data.coneAngle ?? 45} min={1} max={180} step={1} onCommit={(v) => onUpdate({ ...data, coneAngle: v })} /></label>
+        </>
+      )}
     </>
   );
 }

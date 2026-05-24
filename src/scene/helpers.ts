@@ -49,7 +49,7 @@ function createDefaultNodeData(type: SceneNodeType): SceneNodeData {
     case "Area":
       return { type: "Area", shape: "rect", width: 32, height: 32, areaTag: "" };
     case "Light2D":
-      return { type: "Light2D", radius: 128, color: "#ffffff", intensity: 1, falloff: 1 };
+      return { type: "Light2D", variant: "omni", radius: 128, color: "#ffffff", intensity: 1, falloff: 1, directionAngle: 0, coneAngle: 45 };
   }
 }
 
@@ -313,4 +313,28 @@ export function countNodes(root: SceneNode): number {
     count += countNodes(child);
   }
   return count;
+}
+
+export function findParent(root: SceneNode, nodeId: string): SceneNode | null {
+  for (const child of root.children) {
+    if (child.id === nodeId) return root;
+    const found = findParent(child, nodeId);
+    if (found) return found;
+  }
+  return null;
+}
+
+export function duplicateNode(node: SceneNode, idCounter: number): { node: SceneNode; nextId: number } {
+  let nextId = idCounter;
+  function cloneTree(n: SceneNode): SceneNode {
+    const id = `node-${nextId++}`;
+    return {
+      ...structuredClone(n),
+      id,
+      name: n.name + " (copy)",
+      children: n.children.map(cloneTree),
+    };
+  }
+  const cloned = cloneTree(node);
+  return { node: cloned, nextId };
 }

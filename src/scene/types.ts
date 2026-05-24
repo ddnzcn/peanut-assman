@@ -85,12 +85,17 @@ export interface AreaNodeData {
   areaTag: string;
 }
 
+export type Light2DVariant = "omni" | "directional";
+
 export interface Light2DNodeData {
   type: "Light2D";
+  variant: Light2DVariant;
   radius: number;
   color: string;
   intensity: number;
   falloff: number;
+  directionAngle: number;
+  coneAngle: number;
 }
 
 export type SceneNodeData =

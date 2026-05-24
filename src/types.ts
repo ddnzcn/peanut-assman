@@ -19,6 +19,7 @@ export type {
   Node2DData,
   CollisionShapeKind,
   AreaShapeKind,
+  Light2DVariant,
 } from "./scene/types";
 
 export type PotSize = 64 | 128 | 256 | 512 | 1024;
@@ -356,8 +357,10 @@ export type ProjectAction =
   | { type: "selectNode"; nodeId: string | null }
   | { type: "addScene"; scene: SceneDocument }
   | { type: "removeScene"; sceneId: string }
+  | { type: "renameScene"; sceneId: string; name: string }
   | { type: "addChildNode"; sceneId: string; parentId: string; node: SceneNode; index?: number }
   | { type: "removeNode"; sceneId: string; nodeId: string }
+  | { type: "duplicateNode"; sceneId: string; nodeId: string }
   | { type: "moveNode"; sceneId: string; nodeId: string; newParentId: string; index: number }
   | { type: "reorderNode"; sceneId: string; parentId: string; nodeId: string; toIndex: number }
   | { type: "updateSceneNode"; sceneId: string; nodeId: string; patch: Partial<SceneNode> }

@@ -421,16 +421,41 @@ export function renderSceneNodes(
         }
       } else if (node.data.type === "Light2D") {
         const r = node.data.radius * zoom;
-        const gradient = context.createRadialGradient(px, py, 0, px, py, r);
-        gradient.addColorStop(0, "rgba(255,224,102,0.3)");
-        gradient.addColorStop(1, "rgba(255,224,102,0)");
-        context.fillStyle = gradient;
-        context.beginPath();
-        context.arc(px, py, r, 0, Math.PI * 2);
-        context.fill();
-        context.strokeStyle = "rgba(255,224,102,0.6)";
-        context.lineWidth = 1;
-        context.stroke();
+        const variant = node.data.variant ?? "omni";
+        if (variant === "directional") {
+          const dirRad = (node.data.directionAngle ?? 0) * Math.PI / 180;
+          const halfCone = (node.data.coneAngle ?? 45) * Math.PI / 360;
+          const startAngle = dirRad - halfCone;
+          const endAngle = dirRad + halfCone;
+          const gradient = context.createRadialGradient(px, py, 0, px, py, r);
+          gradient.addColorStop(0, "rgba(255,224,102,0.3)");
+          gradient.addColorStop(1, "rgba(255,224,102,0)");
+          context.fillStyle = gradient;
+          context.beginPath();
+          context.moveTo(px, py);
+          context.arc(px, py, r, startAngle, endAngle);
+          context.closePath();
+          context.fill();
+          context.strokeStyle = "rgba(255,224,102,0.6)";
+          context.lineWidth = 1;
+          context.beginPath();
+          context.moveTo(px, py);
+          context.lineTo(px + Math.cos(startAngle) * r, py + Math.sin(startAngle) * r);
+          context.moveTo(px, py);
+          context.lineTo(px + Math.cos(endAngle) * r, py + Math.sin(endAngle) * r);
+          context.stroke();
+        } else {
+          const gradient = context.createRadialGradient(px, py, 0, px, py, r);
+          gradient.addColorStop(0, "rgba(255,224,102,0.3)");
+          gradient.addColorStop(1, "rgba(255,224,102,0)");
+          context.fillStyle = gradient;
+          context.beginPath();
+          context.arc(px, py, r, 0, Math.PI * 2);
+          context.fill();
+          context.strokeStyle = "rgba(255,224,102,0.6)";
+          context.lineWidth = 1;
+          context.stroke();
+        }
       }
 
       // Selection gizmo is rendered as DOM overlay in workspaces.tsx

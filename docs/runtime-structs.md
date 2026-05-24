@@ -106,13 +106,23 @@ struct PscnAreaExt {
 };
 static_assert(sizeof(PscnAreaExt) == 16);
 
+enum PscnLightVariant : uint8_t {
+    LIGHT_OMNI        = 0,
+    LIGHT_DIRECTIONAL = 1,
+};
+
 struct PscnLight2DExt {
     int32_t  radius;
     uint32_t color;             // RGB packed
     uint16_t intensity;         // fixed-point 8.8
     uint16_t falloff;           // fixed-point 8.8
+    uint8_t  variant;           // PscnLightVariant
+    uint8_t  _pad;
+    int16_t  directionAngle;    // fixed-point 8.8 degrees
+    int16_t  coneAngle;         // fixed-point 8.8 degrees (directional only)
+    int16_t  _reserved;
 };
-static_assert(sizeof(PscnLight2DExt) == 12);
+static_assert(sizeof(PscnLight2DExt) == 20);
 
 struct PscnTilesetDef {
     uint32_t id;

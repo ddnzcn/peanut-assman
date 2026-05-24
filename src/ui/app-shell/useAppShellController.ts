@@ -209,6 +209,24 @@ export function useAppShellController() {
         if (event.key === "0") resetWorkspaceZoom();
       }
       if (state.editor.workspace === "level") {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "d") {
+          event.preventDefault();
+          const sel = state.editor.selectedNodeId;
+          const scn = state.project.scenes.find((s) => s.id === state.editor.selectedSceneId);
+          if (sel && scn && sel !== scn.root.id) {
+            dispatch({ type: "duplicateNode", sceneId: scn.id, nodeId: sel });
+          }
+          return;
+        }
+        if (event.key === "Delete" || event.key === "Backspace") {
+          const sel = state.editor.selectedNodeId;
+          const scn = state.project.scenes.find((s) => s.id === state.editor.selectedSceneId);
+          if (sel && scn && sel !== scn.root.id) {
+            event.preventDefault();
+            dispatch({ type: "removeNode", sceneId: scn.id, nodeId: sel });
+          }
+          return;
+        }
         if (event.key === "a") {
           event.preventDefault();
           setAssetTrayOpen((current) => !current);
@@ -317,9 +335,10 @@ export function useAppShellController() {
   function handleWheelZoom(event: ReactWheelEvent<HTMLDivElement>, workspace: "level" | "slicer") {
     event.preventDefault();
     const currentZoom = workspace === "level" ? state.editor.levelZoom : state.editor.slicerZoom;
-    if (!(event.metaKey || event.ctrlKey) && event.deltaMode === 0 && Math.abs(event.deltaX) < 1) {
-      const dx = event.shiftKey ? -event.deltaY : 0;
-      const dy = event.shiftKey ? 0 : -event.deltaY;
+    const isTrackpadPan = !(event.metaKey || event.ctrlKey) && event.deltaMode === 0 && Math.abs(event.deltaX) > 2;
+    if (isTrackpadPan) {
+      const dx = -event.deltaX;
+      const dy = -event.deltaY;
       if (workspace === "level") {
         setLevelPan((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
       } else {
@@ -327,7 +346,8 @@ export function useAppShellController() {
       }
       return;
     }
-    const nextZoom = clamp(currentZoom * Math.exp(-event.deltaY * 0.0025), workspace === "level" ? 0.5 : 0.25, 8);
+    const zoomSensitivity = event.deltaMode === 0 ? 0.005 : 0.05;
+    const nextZoom = clamp(currentZoom * Math.exp(-event.deltaY * zoomSensitivity), workspace === "level" ? 0.25 : 0.25, 16);
     const bounds = event.currentTarget.getBoundingClientRect();
     const style = window.getComputedStyle(event.currentTarget);
     const paddingLeft = parseFloat(style.paddingLeft) || 0;

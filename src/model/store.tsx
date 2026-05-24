@@ -18,7 +18,9 @@ import type {
 } from "../types";
 import { clamp, fnv1a32 } from "../utils";
 import {
+  duplicateNode,
   findNode,
+  findParent,
   insertNode,
   moveNode,
   removeNode,
@@ -32,6 +34,7 @@ const TRACKED_SCENE_ACTIONS = new Set<ProjectAction["type"]>([
   "updateSceneNodeData",
   "addChildNode",
   "removeNode",
+  "duplicateNode",
   "moveNode",
   "reorderNode",
 ]);
@@ -655,6 +658,16 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
         },
         editor: { ...state.editor, selectedSceneId: action.scene.id, selectedNodeId: null },
       };
+    case "renameScene":
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          scenes: state.project.scenes.map((s) =>
+            s.id === action.sceneId ? { ...s, name: action.name } : s,
+          ),
+        },
+      };
     case "removeScene": {
       if (state.project.scenes.length <= 1) return state;
       const scenes = state.project.scenes.filter((s) => s.id !== action.sceneId);
@@ -694,6 +707,27 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
           selectedNodeId: state.editor.selectedNodeId === action.nodeId ? null : state.editor.selectedNodeId,
         },
       };
+    case "duplicateNode": {
+      const dupeScene = state.project.scenes.find((s) => s.id === action.sceneId);
+      if (!dupeScene) return state;
+      const sourceNode = findNode(dupeScene.root, action.nodeId);
+      if (!sourceNode || sourceNode.id === dupeScene.root.id) return state;
+      const parent = findParent(dupeScene.root, action.nodeId);
+      if (!parent) return state;
+      const { node: cloned, nextId } = duplicateNode(sourceNode, state.project.idCounters.node);
+      const siblingIndex = parent.children.findIndex((c) => c.id === action.nodeId);
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          scenes: updateSceneRoot(state.project.scenes, action.sceneId, (root) =>
+            insertNode(root, parent.id, cloned, siblingIndex + 1),
+          ),
+          idCounters: { ...state.project.idCounters, node: nextId },
+        },
+        editor: { ...state.editor, selectedNodeId: cloned.id },
+      };
+    }
     case "moveNode":
       return {
         ...state,

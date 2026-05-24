@@ -71,7 +71,7 @@ Nodes are serialized in **pre-order traversal** of the scene tree. The root node
 | 3     | TileMap        | 24 bytes |
 | 4     | CollisionShape | 16 bytes |
 | 5     | Area           | 16 bytes |
-| 6     | Light2D        | 12 bytes |
+| 6     | Light2D        | 20 bytes |
 
 ### Sprite Extension (12 bytes)
 
@@ -119,14 +119,19 @@ Nodes are serialized in **pre-order traversal** of the scene tree. The root node
 | 8      | i32  | height         | Area height (pixels) |
 | 12     | u32  | tagStringIndex | String table index for area tag |
 
-### Light2D Extension (12 bytes)
+### Light2D Extension (20 bytes)
 
-| Offset | Type | Field     | Notes |
-|--------|------|-----------|-------|
-| 0      | i32  | radius    | Light radius (pixels) |
-| 4      | u32  | color     | RGB as packed u32 |
-| 8      | u16  | intensity | Fixed-point 8.8 |
-| 10     | u16  | falloff   | Fixed-point 8.8 |
+| Offset | Type | Field          | Notes |
+|--------|------|----------------|-------|
+| 0      | i32  | radius         | Light radius (pixels) |
+| 4      | u32  | color          | RGB as packed u32 |
+| 8      | u16  | intensity      | Fixed-point 8.8 |
+| 10     | u16  | falloff        | Fixed-point 8.8 |
+| 12     | u8   | variant        | 0 = omni, 1 = directional |
+| 13     | u8   | _pad           | Reserved |
+| 14     | i16  | directionAngle | Fixed-point 8.8 (degrees) |
+| 16     | i16  | coneAngle      | Fixed-point 8.8 (degrees, directional only) |
+| 18     | i16  | _reserved      | 0 |
 
 ---
 

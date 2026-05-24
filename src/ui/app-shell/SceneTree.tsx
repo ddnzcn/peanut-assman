@@ -251,16 +251,28 @@ export function SceneTree({
               {node.visible ? <Eye size={10} /> : <EyeOff size={10} />}
             </button>
             {!isRoot && (
-              <button
-                className="scene-tree-action-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleToggleLocked(node.id, node.locked);
-                }}
-                title={node.locked ? "Unlock" : "Lock"}
-              >
-                {node.locked ? <Lock size={10} /> : <Unlock size={10} />}
-              </button>
+              <>
+                <button
+                  className="scene-tree-action-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    dispatch({ type: "duplicateNode", sceneId: scene.id, nodeId: node.id });
+                  }}
+                  title="Duplicate (Ctrl+D)"
+                >
+                  <Copy size={10} />
+                </button>
+                <button
+                  className="scene-tree-action-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleLocked(node.id, node.locked);
+                  }}
+                  title={node.locked ? "Unlock" : "Lock"}
+                >
+                  {node.locked ? <Lock size={10} /> : <Unlock size={10} />}
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -288,17 +300,8 @@ export function SceneTree({
   const [renamingSceneId, setRenamingSceneId] = useState<string | null>(null);
 
   function handleRenameScene(sceneId: string, name: string) {
-    const target = scenes.find((s) => s.id === sceneId);
-    if (!target || !name.trim()) { setRenamingSceneId(null); return; }
-    dispatch({
-      type: "updateSceneNode",
-      sceneId,
-      nodeId: target.root.id,
-      patch: {},
-    });
-    // Scene name is on the document, not the root node — dispatch a replaceProject or
-    // just update via a dedicated action. For now, we'll update the root node name as proxy.
-    // TODO: add a renameScene action if needed
+    if (!name.trim()) { setRenamingSceneId(null); return; }
+    dispatch({ type: "renameScene", sceneId, name: name.trim() });
     setRenamingSceneId(null);
   }
 
