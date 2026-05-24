@@ -2,7 +2,8 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { buildAnimatedTileLookup, resolveAnimatedTileSliceId } from "../../animation/playback";
 import { getTileAt } from "../../level/editor";
 import { calculateBlob47Mask, getTerrainSetMarkerTileId } from "../../terrain";
-import type { ProjectDocument, SliceRect, SourceImageAsset, TileMapChunk, TileMapNodeData } from "../../types";
+import type { ProjectDocument, SceneDocument, SceneNode, SliceRect, SourceImageAsset, TileMapChunk, TileMapNodeData } from "../../types";
+import { flattenByRenderLayer, getWorldTransform } from "../../scene/helpers";
 
 export function getImagePoint(
   event: ReactPointerEvent<HTMLDivElement>,
@@ -30,6 +31,18 @@ export function getCanvasTile(
   const y = Math.floor((event.clientY - bounds.top) / (tileMap.tileHeight * zoom));
   if (x < 0 || y < 0 || x >= tileMap.mapWidthTiles || y >= tileMap.mapHeightTiles) return null;
   return { x, y };
+}
+
+export function getCanvasPixel(
+  event: ReactPointerEvent<HTMLCanvasElement>,
+  canvas: HTMLCanvasElement | null,
+  zoom: number,
+): { x: number; y: number } | null {
+  if (!canvas) return null;
+  const bounds = canvas.getBoundingClientRect();
+  const x = (event.clientX - bounds.left) / zoom;
+  const y = (event.clientY - bounds.top) / zoom;
+  return { x: Math.round(x), y: Math.round(y) };
 }
 
 export function rectStyle(rect: SliceRect, zoom: number) {
@@ -191,6 +204,113 @@ export function renderLevelCanvas(
     context.lineTo(canvas.width, y * tileH);
   }
   context.stroke();
+}
+
+export function renderSceneNodes(
+  canvas: HTMLCanvasElement | null,
+  project: ProjectDocument,
+  scene: SceneDocument | null,
+  selectedNodeId: string | null,
+  zoom: number,
+  onInvalidate?: () => void,
+) {
+  if (!canvas || !scene) return;
+  const context = canvas.getContext("2d");
+  if (!context) return;
+
+  const { sliceById, sourceById } = getProjectMaps(project);
+  const layers = flattenByRenderLayer(scene.root);
+  const sortedKeys = [...layers.keys()].sort((a, b) => a - b);
+
+  for (const layerKey of sortedKeys) {
+    const nodes = layers.get(layerKey)!;
+    for (const node of nodes) {
+      if (node.data.type === "Root" || node.data.type === "Node2D" || node.data.type === "TileMap") continue;
+
+      const wt = getWorldTransform(scene.root, node.id);
+      const px = wt.x * zoom;
+      const py = wt.y * zoom;
+
+      if (node.data.type === "Sprite") {
+        const slice = sliceById.get(node.data.sliceId);
+        const source = slice ? sourceById.get(slice.sourceImageId) : null;
+        const image = source ? getCachedRenderImage(source.id, source.dataUrl, onInvalidate) : null;
+        if (slice && image?.complete && image.naturalWidth) {
+          context.save();
+          context.translate(px, py);
+          if (wt.rotation) context.rotate(wt.rotation * Math.PI / 180);
+          context.scale(
+            wt.scaleX * (node.data.flipH ? -1 : 1),
+            wt.scaleY * (node.data.flipV ? -1 : 1),
+          );
+          context.drawImage(
+            image,
+            slice.sourceRect.x, slice.sourceRect.y,
+            slice.sourceRect.width, slice.sourceRect.height,
+            0, 0,
+            slice.sourceRect.width * zoom, slice.sourceRect.height * zoom,
+          );
+          context.restore();
+        } else {
+          context.fillStyle = "rgba(135,197,255,0.25)";
+          context.fillRect(px, py, 16 * zoom, 16 * zoom);
+        }
+      } else if (node.data.type === "CollisionShape") {
+        context.strokeStyle = "rgba(255,124,124,0.8)";
+        context.lineWidth = 2;
+        if (node.data.shape === "circle") {
+          context.beginPath();
+          context.arc(px, py, node.data.radius * zoom, 0, Math.PI * 2);
+          context.stroke();
+        } else {
+          context.strokeRect(px, py, node.data.width * zoom, node.data.height * zoom);
+        }
+      } else if (node.data.type === "Area") {
+        context.strokeStyle = "rgba(119,216,255,0.8)";
+        context.lineWidth = 2;
+        if (node.data.shape === "point") {
+          context.beginPath();
+          context.arc(px, py, 5, 0, Math.PI * 2);
+          context.stroke();
+          context.fillStyle = "rgba(119,216,255,0.3)";
+          context.fill();
+        } else {
+          context.strokeRect(px, py, node.data.width * zoom, node.data.height * zoom);
+        }
+      } else if (node.data.type === "Light2D") {
+        const r = node.data.radius * zoom;
+        const gradient = context.createRadialGradient(px, py, 0, px, py, r);
+        gradient.addColorStop(0, "rgba(255,224,102,0.3)");
+        gradient.addColorStop(1, "rgba(255,224,102,0)");
+        context.fillStyle = gradient;
+        context.beginPath();
+        context.arc(px, py, r, 0, Math.PI * 2);
+        context.fill();
+        context.strokeStyle = "rgba(255,224,102,0.6)";
+        context.lineWidth = 1;
+        context.stroke();
+      }
+
+      if (node.id === selectedNodeId) {
+        context.strokeStyle = "rgba(135,197,255,0.9)";
+        context.lineWidth = 2;
+        context.setLineDash([4, 3]);
+        const size = getNodeBounds(node);
+        context.strokeRect(px - 2, py - 2, size.w * zoom + 4, size.h * zoom + 4);
+        context.setLineDash([]);
+      }
+    }
+  }
+}
+
+function getNodeBounds(node: SceneNode): { w: number; h: number } {
+  switch (node.data.type) {
+    case "CollisionShape": return { w: node.data.width, h: node.data.height };
+    case "Area": return { w: node.data.width, h: node.data.height };
+    case "Light2D": return { w: node.data.radius * 2, h: node.data.radius * 2 };
+    case "Sprite": return { w: 16, h: 16 };
+    default: return { w: 16, h: 16 };
+  }
 }
 
 const renderImageCache = new Map<string, HTMLImageElement>();

@@ -435,6 +435,8 @@ export function AppShell() {
     handleLevelPointerLeave,
     cursorTile,
     clipboardBrush,
+    objectPlaceType,
+    setObjectPlaceType,
     handleCopy,
     handleCut,
     handlePaste,
@@ -934,9 +936,29 @@ export function AppShell() {
                 <V2ToolBtn label="Fill" shortcut="G" active={state.editor.levelTool === "bucket"} onClick={() => dispatch({ type: "setLevelTool", tool: "bucket" })}>
                   <PaintBucket />
                 </V2ToolBtn>
-                <V2ToolBtn label="Place Object" shortcut="O" active={state.editor.levelTool === "objectPlace"} onClick={() => dispatch({ type: "setLevelTool", tool: "objectPlace" })}>
-                  <MapPin />
+                <V2ToolBtn label={`Place ${objectPlaceType}`} shortcut="O" active={state.editor.levelTool === "objectPlace"} onClick={() => dispatch({ type: "setLevelTool", tool: "objectPlace" })}>
+                  <Plus />
                 </V2ToolBtn>
+                {state.editor.levelTool === "objectPlace" && (
+                  <select
+                    value={objectPlaceType}
+                    onChange={(e) => setObjectPlaceType(e.target.value as import("../../types").SceneNodeType)}
+                    style={{
+                      fontSize: "0.7rem",
+                      padding: "0.15rem 0.3rem",
+                      background: "rgba(0,0,0,0.4)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "0.3rem",
+                      color: "inherit",
+                    }}
+                  >
+                    <option value="Sprite">Sprite</option>
+                    <option value="CollisionShape">Collision</option>
+                    <option value="Area">Area</option>
+                    <option value="Light2D">Light</option>
+                    <option value="Node2D">Node2D</option>
+                  </select>
+                )}
                 <V2ToolBtn label="Select Object" shortcut="S" active={state.editor.levelTool === "objectSelect"} onClick={() => dispatch({ type: "setLevelTool", tool: "objectSelect" })}>
                   <MousePointer2 />
                 </V2ToolBtn>

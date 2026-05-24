@@ -112,6 +112,8 @@ export interface SceneNode {
   renderLayer: number;
   collisionLayer: number;
   collisionMask: number;
+  parallaxX: number;
+  parallaxY: number;
   scriptId: string;
   scriptData: Record<string, string>;
   children: SceneNode[];

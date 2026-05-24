@@ -13,13 +13,14 @@ import type {
   ProjectAction,
   SceneDocument,
   SceneNode,
+  SceneNodeType,
   TerrainSet,
   TileBrush,
   TileMapNodeData,
   TilesetTileAsset,
 } from "../../types";
-import { getCanvasTile } from "./canvas";
-import { renderLevelCanvas } from "./canvas";
+import { getCanvasPixel, getCanvasTile, renderLevelCanvas, renderSceneNodes } from "./canvas";
+import { createNode } from "../../scene/helpers";
 
 interface LevelEditorParams {
   state: AppState;
@@ -59,16 +60,17 @@ export function useLevelEditor({
   const levelAnimRafRef = useRef<number | null>(null);
   const levelAnimStartRef = useRef<number | null>(null);
   const levelAnimTimeRef = useRef<number>(0);
-  const levelRenderStateRef = useRef({ project: state.project, tileMapData, zoom: state.editor.levelZoom });
+  const levelRenderStateRef = useRef({ project: state.project, scene, tileMapData, selectedNodeId: state.editor.selectedNodeId, zoom: state.editor.levelZoom });
 
   const [cursorTile, setCursorTile] = useState<{ x: number; y: number } | null>(null);
+  const [objectPlaceType, setObjectPlaceType] = useState<SceneNodeType>("Sprite");
   const [clipboardBrush, setClipboardBrush] = useState<TileBrush | null>(null);
   const [levelDragStart, setLevelDragStart] = useState<{ x: number; y: number } | null>(null);
   const [rectDragCurrent, setRectDragCurrent] = useState<{ x: number; y: number } | null>(null);
   const [levelSelection, setLevelSelection] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
   useEffect(() => {
-    levelRenderStateRef.current = { project: state.project, tileMapData, zoom: state.editor.levelZoom };
+    levelRenderStateRef.current = { project: state.project, scene, tileMapData, selectedNodeId: state.editor.selectedNodeId, zoom: state.editor.levelZoom };
   }, [state.project, tileMapData, state.editor.levelZoom]);
 
   // Static canvas render
@@ -80,6 +82,7 @@ export function useLevelEditor({
       renderLevelCanvas(levelCanvasRef.current, state.project, tileMapData, state.editor.levelZoom, undefined, () => {
         requestAnimationFrame(redraw);
       });
+      renderSceneNodes(levelCanvasRef.current, state.project, scene, state.editor.selectedNodeId, state.editor.levelZoom);
     };
     redraw();
     const frameId = requestAnimationFrame(redraw);
@@ -104,8 +107,9 @@ export function useLevelEditor({
     const tick = (now: number) => {
       if (levelAnimStartRef.current === null) levelAnimStartRef.current = now;
       levelAnimTimeRef.current = now - levelAnimStartRef.current;
-      const { project, tileMapData: tm, zoom } = levelRenderStateRef.current;
+      const { project, scene: s, tileMapData: tm, selectedNodeId: selId, zoom } = levelRenderStateRef.current;
       renderLevelCanvas(levelCanvasRef.current, project, tm, zoom, levelAnimTimeRef.current);
+      renderSceneNodes(levelCanvasRef.current, project, s, selId, zoom);
       levelAnimRafRef.current = requestAnimationFrame(tick);
     };
     levelAnimRafRef.current = requestAnimationFrame(tick);
@@ -244,7 +248,20 @@ export function useLevelEditor({
   }
 
   function handleLevelPointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
-    if (!tileMapData || !scene || !selectedNode || spaceHeld || state.editor.levelTool === "hand" || event.button === 1) return;
+    if (!scene || spaceHeld || state.editor.levelTool === "hand" || event.button === 1) return;
+
+    if (state.editor.levelTool === "objectPlace") {
+      const pixel = getCanvasPixel(event, levelCanvasRef.current, state.editor.levelZoom);
+      if (!pixel) return;
+      const parentId = selectedNode?.id ?? scene.root.id;
+      const nodeId = `node-${state.project.idCounters.node}`;
+      const node = createNode(objectPlaceType, objectPlaceType, nodeId);
+      node.transform = { ...node.transform, x: pixel.x, y: pixel.y };
+      dispatch({ type: "addChildNode", sceneId: scene.id, parentId, node });
+      return;
+    }
+
+    if (!tileMapData || !selectedNode) return;
     const point = getCanvasTile(event, levelCanvasRef.current, tileMapData, state.editor.levelZoom);
     if (!point) return;
 
@@ -389,6 +406,8 @@ export function useLevelEditor({
     handleLevelPointerMove,
     handleLevelPointerUp,
     handleLevelPointerLeave,
+    objectPlaceType,
+    setObjectPlaceType,
     handleCopy,
     handleCut,
     handlePaste,

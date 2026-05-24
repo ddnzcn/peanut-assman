@@ -26,6 +26,8 @@ export function createNode(
     renderLayer: 0,
     collisionLayer: 1,
     collisionMask: 1,
+    parallaxX: 1,
+    parallaxY: 1,
     scriptId: "",
     scriptData: {},
     children: [],
