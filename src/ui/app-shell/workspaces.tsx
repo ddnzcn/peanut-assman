@@ -1,27 +1,30 @@
 import type { PointerEvent as ReactPointerEvent, RefObject, WheelEvent as ReactWheelEvent } from "react";
 import type {
-  GridSliceOptions,
   ManualSliceRect,
-  TileMapNodeData,
   PackedAtlas,
+  SceneDocument,
+  SceneNode,
   SliceKind,
   SliceRect,
   SourceImageAsset,
+  TileMapNodeData,
 } from "../../types";
 import type { SlicerCanvasTool } from "./constants";
 import { rectStyle } from "./canvas";
+import { getWorldTransform } from "../../scene/helpers";
 
 interface SlicerSurfaceProps {
   source: SourceImageAsset | null;
-  gridPreview: Array<{ name: string; rect: SliceRect; kind: SliceKind }>;
+  zoom: number;
+  pan: { x: number; y: number };
+  gridPreview: Array<{ name: string; rect: SliceRect }>;
   manualRects: ManualSliceRect[];
   selectedManualRectIndex: number | null;
   slicerCanvasTool: SlicerCanvasTool;
+  manualKind: SliceKind;
   dragRect: SliceRect | null;
-  slicerZoom: number;
-  slicerPan: { x: number; y: number };
-  canvasRef: RefObject<HTMLDivElement>;
   stageRef: RefObject<HTMLDivElement>;
+  canvasRef: RefObject<HTMLDivElement>;
   onWheel: (event: ReactWheelEvent<HTMLDivElement>) => void;
   onStagePanStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStagePanMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -29,80 +32,128 @@ interface SlicerSurfaceProps {
   onCanvasPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onCanvasPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onCanvasPointerUp: () => void;
-  onManualRectSelect: (index: number | null) => void;
+  onManualRectSelect: (index: number) => void;
 }
 
 function SlicerSurface(props: SlicerSurfaceProps) {
+  if (!props.source) {
+    return <div className="empty-state">Import a PNG to begin slicing.</div>;
+  }
   return (
     <div
       ref={props.stageRef}
-      className={`slicer-stage viewport-stage ${props.slicerCanvasTool === "move" ? "cursor-hand" : "cursor-slicer"}`}
+      className="slicer-stage viewport-stage"
       onWheel={props.onWheel}
       onPointerDown={props.onStagePanStart}
       onPointerMove={props.onStagePanMove}
       onPointerUp={props.onStagePanEnd}
     >
       <div className="viewport-inner">
-        {props.source ? (
-          <div className="viewport-camera" style={{ transform: `translate(${props.slicerPan.x}px, ${props.slicerPan.y}px)` }}>
-            <div
-              ref={props.canvasRef}
-              className="slicer-canvas"
-              onPointerDown={props.onCanvasPointerDown}
-              onPointerMove={props.onCanvasPointerMove}
-              onPointerUp={props.onCanvasPointerUp}
-              style={{
-                width: props.source.width * props.slicerZoom,
-                height: props.source.height * props.slicerZoom,
-              }}
-            >
-              <img src={props.source.dataUrl} alt={props.source.fileName} />
-              {props.gridPreview.map((preview) => (
-                <div
-                  key={`${preview.name}-${preview.rect.x}-${preview.rect.y}`}
-                  className="slice-outline"
-                  style={rectStyle(preview.rect, props.slicerZoom)}
-                >
-                  <span>{preview.name}</span>
-                </div>
-              ))}
-              {props.manualRects.map((rect, index) => (
-                <div
-                  key={`${rect.name}-${rect.x}-${rect.y}-${index}`}
-                  className={`slice-outline ${props.selectedManualRectIndex === index ? "selected" : ""}`}
-                  style={rectStyle(rect, props.slicerZoom)}
-                  onPointerDown={(event) => {
-                    event.stopPropagation();
-                    props.onManualRectSelect(index);
-                  }}
-                >
-                  <span>{rect.name}</span>
-                </div>
-              ))}
-              {props.dragRect ? <div className="slice-outline pending" style={rectStyle(props.dragRect, props.slicerZoom)} /> : null}
-            </div>
+        <div className="viewport-camera" style={{ transform: `translate(${props.pan.x}px, ${props.pan.y}px)`, position: "relative" }}>
+          <div
+            ref={props.canvasRef}
+            className="slicer-canvas"
+            style={{ width: props.source.width * props.zoom, height: props.source.height * props.zoom, position: "relative" }}
+            onPointerDown={props.onCanvasPointerDown}
+            onPointerMove={props.onCanvasPointerMove}
+            onPointerUp={props.onCanvasPointerUp}
+          >
+            <img
+              src={props.source.dataUrl}
+              alt={props.source.fileName}
+              style={{ width: "100%", height: "100%", imageRendering: "pixelated", display: "block", pointerEvents: "none" }}
+              draggable={false}
+            />
+            {props.gridPreview.map((entry, index) => (
+              <div
+                key={index}
+                className="slicer-preview-rect"
+                style={rectStyle(entry.rect, props.zoom)}
+              />
+            ))}
+            {props.manualRects.map((entry, index) => (
+              <div
+                key={index}
+                className={`slicer-manual-rect${index === props.selectedManualRectIndex ? " selected" : ""}`}
+                style={rectStyle(entry, props.zoom)}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  props.onManualRectSelect(index);
+                }}
+              >
+                <span className="slicer-manual-rect-label">{entry.name}</span>
+              </div>
+            ))}
+            {props.dragRect && (
+              <div className="slicer-drag-rect" style={rectStyle(props.dragRect, props.zoom)} />
+            )}
           </div>
-        ) : (
-          <div className="empty-state">Pick a source image.</div>
-        )}
+        </div>
       </div>
     </div>
   );
 }
 
-export function AtlasWorkspace(props: {
+function PackPreview(props: {
   atlas: PackedAtlas | null;
-  module: "pack" | "slicer";
+  zoom: number;
+  pan: { x: number; y: number };
+  stageRef: RefObject<HTMLDivElement>;
+  onWheel: (event: ReactWheelEvent<HTMLDivElement>) => void;
+  onPanStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPanMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPanEnd: (event: ReactPointerEvent<HTMLDivElement>) => void;
+}) {
+  if (!props.atlas || !props.atlas.pages.length) {
+    return (
+      <div className="empty-state">
+        <p>No atlas built yet.</p>
+        <p>Import images and create slices first.</p>
+      </div>
+    );
+  }
+  return (
+    <div
+      ref={props.stageRef}
+      className="pack-stage viewport-stage"
+      onWheel={props.onWheel}
+      onPointerDown={props.onPanStart}
+      onPointerMove={props.onPanMove}
+      onPointerUp={props.onPanEnd}
+    >
+      <div className="viewport-inner">
+        <div className="viewport-camera" style={{ transform: `translate(${props.pan.x}px, ${props.pan.y}px)` }}>
+          <div style={{ display: "flex", gap: 16, padding: 16, flexWrap: "wrap" }}>
+            {props.atlas.pages.map((page) => (
+              <div key={page.index} className="pack-page" style={{ width: page.width * props.zoom, height: page.height * props.zoom }}>
+                <img
+                  src={page.blobUrl}
+                  alt={`page ${page.index}`}
+                  style={{ width: "100%", height: "100%", imageRendering: "pixelated", display: "block" }}
+                  draggable={false}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export interface AtlasWorkspaceProps {
+  atlas: PackedAtlas | null;
+  module: "slicer" | "pack";
   source: SourceImageAsset | null;
-  gridOptions: GridSliceOptions;
-  setGridOptions: React.Dispatch<React.SetStateAction<GridSliceOptions>>;
-  gridPreview: Array<{ name: string; rect: SliceRect; kind: SliceKind }>;
+  gridOptions: import("../../types").GridSliceOptions;
+  setGridOptions: React.Dispatch<React.SetStateAction<import("../../types").GridSliceOptions>>;
+  gridPreview: Array<{ name: string; rect: SliceRect }>;
   manualRects: ManualSliceRect[];
   selectedManualRectIndex: number | null;
   slicerCanvasTool: SlicerCanvasTool;
   manualKind: SliceKind;
   manualDraft: ManualSliceRect;
-  setManualKind: React.Dispatch<React.SetStateAction<SliceKind>>;
+  setManualKind: (kind: SliceKind) => void;
   dragRect: SliceRect | null;
   slicerZoom: number;
   slicerPan: { x: number; y: number };
@@ -123,60 +174,25 @@ export function AtlasWorkspace(props: {
   onCanvasPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onCanvasPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onCanvasPointerUp: () => void;
-  onManualRectSelect: (index: number | null) => void;
-}) {
+  onManualRectSelect: (index: number) => void;
+}
+
+export function AtlasWorkspace(props: AtlasWorkspaceProps) {
   return (
-    <div className="workspace-content level-workspace">
-      {props.module === "pack" ? (
-        <div
-          ref={props.packStageRef}
-          className="atlas-pack-stage viewport-stage cursor-hand"
-          onWheel={props.onPackWheel}
-          onPointerDown={props.onPackPanStart}
-          onPointerMove={props.onPackPanMove}
-          onPointerUp={props.onPackPanEnd}
-        >
-          <div className="viewport-inner">
-            <div className="viewport-camera" style={{ transform: `translate(${props.packPan.x}px, ${props.packPan.y}px)` }}>
-              {props.atlas?.pages.length ? (
-                <div className="atlas-pages-viewport" style={{ display: "flex", gap: `${16 * props.packZoom}px`, alignItems: "flex-start" }}>
-                  {props.atlas.pages.map((page) => (
-                    <div key={page.index} style={{ flexShrink: 0 }}>
-                      <img
-                        src={page.blobUrl}
-                        alt={`Atlas page ${page.index}`}
-                        style={{
-                          display: "block",
-                          width: page.width * props.packZoom,
-                          height: page.height * props.packZoom,
-                          imageRendering: "pixelated",
-                          border: "1px solid rgba(255,255,255,0.15)",
-                        }}
-                      />
-                      <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>
-                        Page {page.index} — {page.width}×{page.height}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="empty-state">Use Sprite Slicer or import PNG sources, then atlas pages will appear here.</div>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : (
+    <div className="workspace-content atlas-workspace">
+      {props.module === "slicer" ? (
         <SlicerSurface
           source={props.source}
+          zoom={props.slicerZoom}
+          pan={props.slicerPan}
           gridPreview={props.gridPreview}
           manualRects={props.manualRects}
           selectedManualRectIndex={props.selectedManualRectIndex}
           slicerCanvasTool={props.slicerCanvasTool}
+          manualKind={props.manualKind}
           dragRect={props.dragRect}
-          slicerZoom={props.slicerZoom}
-          slicerPan={props.slicerPan}
-          canvasRef={props.canvasRef}
           stageRef={props.stageRef}
+          canvasRef={props.canvasRef}
           onWheel={props.onWheel}
           onStagePanStart={props.onStagePanStart}
           onStagePanMove={props.onStagePanMove}
@@ -186,14 +202,38 @@ export function AtlasWorkspace(props: {
           onCanvasPointerUp={props.onCanvasPointerUp}
           onManualRectSelect={props.onManualRectSelect}
         />
+      ) : (
+        <PackPreview
+          atlas={props.atlas}
+          zoom={props.packZoom}
+          pan={props.packPan}
+          stageRef={props.packStageRef}
+          onWheel={props.onPackWheel}
+          onPanStart={props.onPackPanStart}
+          onPanMove={props.onPackPanMove}
+          onPanEnd={props.onPackPanEnd}
+        />
       )}
     </div>
   );
 }
 
+const DEFAULT_VIEWPORT_W = 1024;
+const DEFAULT_VIEWPORT_H = 768;
+
+function getNodeBounds(node: SceneNode): { w: number; h: number } {
+  if (node.data.type === "CollisionShape") return { w: node.data.width, h: node.data.height };
+  if (node.data.type === "Area") return { w: node.data.shape === "point" ? 10 : node.data.width, h: node.data.shape === "point" ? 10 : node.data.height };
+  if (node.data.type === "Light2D") return { w: node.data.radius * 2, h: node.data.radius * 2 };
+  if (node.data.type === "TileMap") return { w: node.data.mapWidthTiles * node.data.tileWidth, h: node.data.mapHeightTiles * node.data.tileHeight };
+  return { w: 16, h: 16 };
+}
+
 export function LevelWorkspace(props: {
   tileMapData: TileMapNodeData | null;
   sceneTileMapData: TileMapNodeData | null;
+  scene: SceneDocument | null;
+  selectedNode: SceneNode | null;
   levelZoom: number;
   levelPan: { x: number; y: number };
   cursorClass: string;
@@ -221,12 +261,18 @@ export function LevelWorkspace(props: {
   onStagePanMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStagePanEnd: (event: ReactPointerEvent<HTMLDivElement>) => void;
 }) {
-  const { tileMapData, rectDragStart: rds, rectDragCurrent: rdc, levelZoom: zoom } = props;
+  const { tileMapData, sceneTileMapData, scene, selectedNode, rectDragStart: rds, rectDragCurrent: rdc, levelZoom: zoom } = props;
 
-  const tileW = tileMapData ? tileMapData.tileWidth * zoom : 0;
-  const tileH = tileMapData ? tileMapData.tileHeight * zoom : 0;
+  const canvasW = sceneTileMapData
+    ? sceneTileMapData.mapWidthTiles * sceneTileMapData.tileWidth * zoom
+    : DEFAULT_VIEWPORT_W * zoom;
+  const canvasH = sceneTileMapData
+    ? sceneTileMapData.mapHeightTiles * sceneTileMapData.tileHeight * zoom
+    : DEFAULT_VIEWPORT_H * zoom;
 
-  // Live drag rect overlay (rect-fill and select tools during drag)
+  const tileW = tileMapData ? tileMapData.tileWidth * zoom : 16 * zoom;
+  const tileH = tileMapData ? tileMapData.tileHeight * zoom : 16 * zoom;
+
   let rectOverlay: React.CSSProperties | null = null;
   if (tileMapData && rds && rdc) {
     const x1 = Math.min(rds.x, rdc.x);
@@ -246,7 +292,6 @@ export function LevelWorkspace(props: {
     };
   }
 
-  // Committed selection overlay — persists while select tool is active
   let selectionOverlay: React.CSSProperties | null = null;
   const sel = props.levelSelection;
   if (tileMapData && sel && props.levelTool === "select" && !rds) {
@@ -267,7 +312,6 @@ export function LevelWorkspace(props: {
     };
   }
 
-  // Cursor preview overlay — ghost of brush/tile under cursor
   let cursorOverlay: React.CSSProperties | null = null;
   const ct = props.cursorTile;
   if (tileMapData && ct && (props.levelTool === "brush" || props.levelTool === "erase")) {
@@ -292,9 +336,78 @@ export function LevelWorkspace(props: {
     };
   }
 
+  // Gizmo for selected node
+  let gizmo: React.ReactNode = null;
+  if (selectedNode && scene && selectedNode.data.type !== "Root" && selectedNode.data.type !== "TileMap") {
+    const wt = getWorldTransform(scene.root, selectedNode.id);
+    const bounds = getNodeBounds(selectedNode);
+    const gx = wt.x * zoom;
+    const gy = wt.y * zoom;
+    const gw = bounds.w * zoom;
+    const gh = bounds.h * zoom;
+    const handleSize = 7;
+    const half = Math.floor(handleSize / 2);
+
+    gizmo = (
+      <div style={{ position: "absolute", left: gx - 2, top: gy - 2, width: gw + 4, height: gh + 4, pointerEvents: "none" }}>
+        {/* Selection border */}
+        <div style={{
+          position: "absolute", inset: 0,
+          border: "1.5px solid rgba(135, 197, 255, 0.9)",
+          boxSizing: "border-box",
+        }} />
+        {/* Corner handles */}
+        {[
+          { left: -half, top: -half },
+          { left: gw + 4 - half - 1, top: -half },
+          { left: -half, top: gh + 4 - half - 1 },
+          { left: gw + 4 - half - 1, top: gh + 4 - half - 1 },
+        ].map((pos, i) => (
+          <div key={i} style={{
+            position: "absolute",
+            left: pos.left, top: pos.top,
+            width: handleSize, height: handleSize,
+            background: "#fff",
+            border: "1px solid rgba(135, 197, 255, 1)",
+            boxSizing: "border-box",
+          }} />
+        ))}
+        {/* Edge midpoint handles */}
+        {[
+          { left: (gw + 4) / 2 - half, top: -half },
+          { left: (gw + 4) / 2 - half, top: gh + 4 - half - 1 },
+          { left: -half, top: (gh + 4) / 2 - half },
+          { left: gw + 4 - half - 1, top: (gh + 4) / 2 - half },
+        ].map((pos, i) => (
+          <div key={`e${i}`} style={{
+            position: "absolute",
+            left: pos.left, top: pos.top,
+            width: handleSize, height: handleSize,
+            background: "#fff",
+            border: "1px solid rgba(135, 197, 255, 1)",
+            boxSizing: "border-box",
+          }} />
+        ))}
+        {/* Node type label */}
+        <div style={{
+          position: "absolute",
+          left: 0, top: -16,
+          fontSize: "0.6rem",
+          color: "rgba(135, 197, 255, 0.9)",
+          whiteSpace: "nowrap",
+          pointerEvents: "none",
+        }}>
+          {selectedNode.name}
+        </div>
+      </div>
+    );
+  }
+
+  const hasContent = scene !== null;
+
   return (
     <div className="workspace-content level-workspace">
-      {props.sceneTileMapData ? (
+      {hasContent ? (
         <div
           ref={props.stageRef}
           className={`level-stage viewport-stage ${props.cursorClass}`}
@@ -307,14 +420,14 @@ export function LevelWorkspace(props: {
             <div className="viewport-camera" style={{ transform: `translate(${props.levelPan.x}px, ${props.levelPan.y}px)`, position: "relative" }}>
               <canvas
                 ref={props.webglCanvasRef}
-                width={((props.sceneTileMapData?.mapWidthTiles ?? 0) * (props.sceneTileMapData?.tileWidth ?? 0) * props.levelZoom)}
-                height={((props.sceneTileMapData?.mapHeightTiles ?? 0) * (props.sceneTileMapData?.tileHeight ?? 0) * props.levelZoom)}
+                width={canvasW}
+                height={canvasH}
                 style={{ position: "absolute", top: 0, left: 0, imageRendering: "pixelated" }}
               />
               <canvas
                 ref={props.levelCanvasRef}
-                width={((props.sceneTileMapData?.mapWidthTiles ?? 0) * (props.sceneTileMapData?.tileWidth ?? 0) * props.levelZoom)}
-                height={((props.sceneTileMapData?.mapHeightTiles ?? 0) * (props.sceneTileMapData?.tileHeight ?? 0) * props.levelZoom)}
+                width={canvasW}
+                height={canvasH}
                 style={{ position: "relative", background: "transparent" }}
                 onPointerDown={props.onCanvasPointerDown}
                 onPointerMove={props.onCanvasPointerMove}
@@ -341,11 +454,12 @@ export function LevelWorkspace(props: {
                   )}
                 </div>
               )}
+              {gizmo}
             </div>
           </div>
         </div>
       ) : (
-        <div className="empty-state">No level available.</div>
+        <div className="empty-state">No scene available.</div>
       )}
     </div>
   );

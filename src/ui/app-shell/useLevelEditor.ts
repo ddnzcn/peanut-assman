@@ -136,12 +136,17 @@ export function useLevelEditor({
   // Center viewport
   useEffect(() => {
     const stage = levelStageRef.current;
-    const tm = sceneTileMapData;
-    if (!stage || !tm || state.editor.workspace !== "level") return;
+    if (!stage || state.editor.workspace !== "level") return;
+    const vpW = sceneTileMapData
+      ? sceneTileMapData.mapWidthTiles * sceneTileMapData.tileWidth * state.editor.levelZoom
+      : 1024 * state.editor.levelZoom;
+    const vpH = sceneTileMapData
+      ? sceneTileMapData.mapHeightTiles * sceneTileMapData.tileHeight * state.editor.levelZoom
+      : 768 * state.editor.levelZoom;
     const centerViewport = () => {
       setLevelPan({
-        x: (stage.clientWidth - tm.mapWidthTiles * tm.tileWidth * state.editor.levelZoom) * 0.5,
-        y: (stage.clientHeight - tm.mapHeightTiles * tm.tileHeight * state.editor.levelZoom) * 0.5,
+        x: (stage.clientWidth - vpW) * 0.5,
+        y: (stage.clientHeight - vpH) * 0.5,
       });
     };
     const initialFrame = requestAnimationFrame(() => {

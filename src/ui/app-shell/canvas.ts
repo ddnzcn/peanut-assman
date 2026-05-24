@@ -294,14 +294,7 @@ export function renderSceneNodes(
         context.stroke();
       }
 
-      if (node.id === selectedNodeId) {
-        context.strokeStyle = "rgba(135,197,255,0.9)";
-        context.lineWidth = 2;
-        context.setLineDash([4, 3]);
-        const size = getNodeBounds(node);
-        context.strokeRect(px - 2, py - 2, size.w * zoom + 4, size.h * zoom + 4);
-        context.setLineDash([]);
-      }
+      // Selection gizmo is rendered as DOM overlay in workspaces.tsx
     }
   }
 }
