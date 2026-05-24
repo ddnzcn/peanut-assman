@@ -56,7 +56,9 @@ Nodes are serialized in **pre-order traversal** of the scene tree. The root node
 | 40     | u32  | scriptDataStringIndex | JSON-encoded key-value pairs (0xFFFFFFFF = none) |
 | 44     | u32  | collisionLayer      | 32-bit collision layer bitmask |
 | 48     | u32  | collisionMask       | 32-bit collision mask bitmask |
-| 52     | u16  | extSize             | Size of type-specific extension in bytes |
+| 52     | i16  | parallaxX           | Parallax factor X, fixed-point 8.8 (1.0 = normal) |
+| 54     | i16  | parallaxY           | Parallax factor Y, fixed-point 8.8 (1.0 = normal) |
+| 56     | u16  | extSize             | Size of type-specific extension in bytes |
 | 54-63  | u8[] | reserved            | Zero-filled |
 
 ### Node Types

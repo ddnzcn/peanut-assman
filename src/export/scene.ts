@@ -78,6 +78,8 @@ interface ExportNode {
   scriptDataStringIndex: number;
   collisionLayer: number;
   collisionMask: number;
+  parallaxX: number;
+  parallaxY: number;
   extSize: number;
   writeExt: (view: DataView, offset: number) => void;
 }
@@ -242,6 +244,8 @@ async function buildExportState(project: ProjectDocument, scene: SceneDocument) 
       scriptDataStringIndex: indexString(scriptDataStr, stringList, stringIndex),
       collisionLayer: node.collisionLayer,
       collisionMask: node.collisionMask,
+      parallaxX: packFixed88(node.parallaxX),
+      parallaxY: packFixed88(node.parallaxY),
       extSize,
       writeExt,
     };
@@ -339,8 +343,10 @@ function writeNodes(view: DataView, state: ExportState) {
     view.setUint32(cursor + 40, node.scriptDataStringIndex, true);
     view.setUint32(cursor + 44, node.collisionLayer, true);
     view.setUint32(cursor + 48, node.collisionMask, true);
-    view.setUint16(cursor + 52, node.extSize, true);
-    // 54-63: reserved
+    view.setInt16(cursor + 52, node.parallaxX, true);
+    view.setInt16(cursor + 54, node.parallaxY, true);
+    view.setUint16(cursor + 56, node.extSize, true);
+    // 58-63: reserved
     node.writeExt(view, cursor + NODE_BASE_SIZE);
     cursor += NODE_BASE_SIZE + node.extSize;
   }

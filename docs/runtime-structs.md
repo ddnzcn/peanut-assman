@@ -57,8 +57,10 @@ struct PscnNodeBase {
     uint32_t scriptDataStringIndex;
     uint32_t collisionLayer;
     uint32_t collisionMask;
+    int16_t  parallaxX;            // fixed-point 8.8 (256 = 1.0)
+    int16_t  parallaxY;
     uint16_t extSize;
-    uint8_t  reserved[10];
+    uint8_t  reserved[8];
 };
 static_assert(sizeof(PscnNodeBase) == 64);
 

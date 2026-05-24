@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { getFrameAtTime as getAnimFrameAtTime } from "../../animation/playback";
-import { buildProjectJsonBlob, loadProjectFromFile } from "../../export";
+import { buildProjectJsonBlob, loadProjectFromFile, exportSceneBin, exportSceneDebugJson } from "../../export";
 import { createSourceSlicesFromImages, fileToSourceImageAsset } from "../../image";
 import { createExampleProject } from "../../model/exampleProject";
 import { getEffectiveTileMapTileIds, getSelectedNode, getSelectedScene, getSelectedTerrainSet, getSelectedTileMapData } from "../../model/selectors";
@@ -469,9 +469,26 @@ export function useAppShellController() {
     }
   }
 
-  // TODO: exportScene — PSCN binary format (Phase 7)
   async function exportLevel() {
-    // Temporarily disabled — TMAP export being replaced with PSCN
+    if (!scene) return;
+    try {
+      const bytes = await exportSceneBin(state.project, scene);
+      await saveBlobWithPicker(
+        new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" }),
+        `${scene.name}.pscn.bin`,
+        "Scene Binary",
+        { "application/octet-stream": [".bin"] },
+      );
+      await saveBlobWithPicker(
+        new Blob([await exportSceneDebugJson(state.project, scene)], { type: "application/json" }),
+        `${scene.name}.debug.json`,
+        "Scene Debug JSON",
+        { "application/json": [".json"] },
+      );
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setError(error instanceof Error ? error.message : "Failed to export scene.");
+    }
   }
 
   function createAnimation() {
