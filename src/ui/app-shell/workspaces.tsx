@@ -44,7 +44,7 @@ function SlicerSurface(props: SlicerSurfaceProps) {
   return (
     <div
       ref={props.stageRef}
-      className="slicer-stage viewport-stage"
+      className={`slicer-stage viewport-stage ${props.slicerCanvasTool === "move" ? "cursor-hand" : "cursor-slicer"}`}
       onWheel={props.onWheel}
       onPointerDown={props.onStagePanStart}
       onPointerMove={props.onStagePanMove}
@@ -68,10 +68,12 @@ function SlicerSurface(props: SlicerSurfaceProps) {
             />
             {props.gridPreview.map((entry, index) => (
               <div
-                key={index}
+                key={`${entry.name}-${entry.rect.x}-${entry.rect.y}`}
                 className="slice-outline"
                 style={rectStyle(entry.rect, props.zoom)}
-              />
+              >
+                <span>{entry.name}</span>
+              </div>
             ))}
             {props.manualRects.map((entry, index) => (
               <div
@@ -181,7 +183,7 @@ export interface AtlasWorkspaceProps {
 
 export function AtlasWorkspace(props: AtlasWorkspaceProps) {
   return (
-    <div className="workspace-content atlas-workspace">
+    <div className="workspace-content atlas-workspace" style={{ gridTemplateRows: "1fr" }}>
       {props.module === "slicer" ? (
         <SlicerSurface
           source={props.source}
