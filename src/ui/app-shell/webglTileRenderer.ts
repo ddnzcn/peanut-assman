@@ -1,7 +1,8 @@
-import type { ProjectDocument, TileMapChunk, TileMapNodeData } from "../../types";
+import type { ProjectDocument, SceneDocument, TileMapChunk, TileMapNodeData } from "../../types";
 import { buildAnimatedTileLookup, resolveAnimatedTileSliceId } from "../../animation/playback";
 import { getTileAt } from "../../level/editor";
 import { calculateBlob47Mask, getTerrainSetMarkerTileId } from "../../terrain";
+import { collectTileMapInstances } from "../../scene/helpers";
 
 const VERT_SRC = `
 attribute vec2 a_pos;
@@ -89,7 +90,7 @@ export function initWebGLTileRenderer(canvas: HTMLCanvasElement): boolean {
 export function renderTilesWebGL(
   canvas: HTMLCanvasElement,
   project: ProjectDocument,
-  tileMap: TileMapNodeData,
+  scene: SceneDocument,
   zoom: number,
   animTimeMs?: number,
 ): void {
@@ -101,7 +102,7 @@ export function renderTilesWebGL(
   const w = canvas.width;
   const h = canvas.height;
   gl.viewport(0, 0, w, h);
-  gl.clearColor(0.071, 0.09, 0.11, 1);
+  gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.useProgram(program);
   gl.uniform2f(uResolutionLoc, w, h);
@@ -118,9 +119,6 @@ export function renderTilesWebGL(
     });
   });
 
-  const tileW = tileMap.tileWidth * zoom;
-  const tileH = tileMap.tileHeight * zoom;
-
   const batches = new Map<string, { positions: number[]; uvs: number[] }>();
 
   function addQuad(sourceId: string, sx: number, sy: number, sw: number, sh: number, texW: number, texH: number, dx: number, dy: number, dw: number, dh: number) {
@@ -133,7 +131,6 @@ export function renderTilesWebGL(
     const v0 = sy / texH;
     const u1 = (sx + sw) / texW;
     const v1 = (sy + sh) / texH;
-
     batch.positions.push(
       dx, dy, dx + dw, dy, dx, dy + dh,
       dx + dw, dy, dx + dw, dy + dh, dx, dy + dh,
@@ -144,85 +141,79 @@ export function renderTilesWebGL(
     );
   }
 
-  function resolveTileQuad(tileId: number, x: number, y: number) {
-    const animSliceId = animTimeMs !== undefined
-      ? resolveAnimatedTileSliceId(animLookup, tileId, animTimeMs)
-      : null;
-    const slice = animSliceId
-      ? sliceById.get(animSliceId)
-      : (() => { const t = tileById.get(tileId); return t ? sliceById.get(t.sliceId) : undefined; })();
-    const source = slice ? sourceById.get(slice.sourceImageId) : undefined;
-    if (!slice || !source) return;
-    addQuad(
-      source.id,
-      slice.sourceRect.x, slice.sourceRect.y,
-      slice.sourceRect.width, slice.sourceRect.height,
-      source.width, source.height,
-      x * tileW, y * tileH, tileW, tileH,
-    );
-  }
+  const instances = collectTileMapInstances(scene.root);
 
-  for (const chunk of Object.values(tileMap.chunks) as TileMapChunk[]) {
-    for (let i = 0; i < chunk.tiles.length; i++) {
-      const cell = chunk.tiles[i];
-      if (!cell.tileId) continue;
+  for (const inst of instances) {
+    const tileMap = inst.data;
+    const ox = inst.worldX * zoom;
+    const oy = inst.worldY * zoom;
+    const tileW = tileMap.tileWidth * zoom;
+    const tileH = tileMap.tileHeight * zoom;
 
-      const localX = i % tileMap.chunkWidthTiles;
-      const localY = Math.floor(i / tileMap.chunkWidthTiles);
-      const x = chunk.chunkX * tileMap.chunkWidthTiles + localX;
-      const y = chunk.chunkY * tileMap.chunkHeightTiles + localY;
+    function resolveTileQuad(tileId: number, px: number, py: number, tw: number, th: number) {
+      const animSliceId = animTimeMs !== undefined
+        ? resolveAnimatedTileSliceId(animLookup, tileId, animTimeMs)
+        : null;
+      const slice = animSliceId
+        ? sliceById.get(animSliceId)
+        : (() => { const t = tileById.get(tileId); return t ? sliceById.get(t.sliceId) : undefined; })();
+      const source = slice ? sourceById.get(slice.sourceImageId) : undefined;
+      if (!slice || !source) return;
+      addQuad(source.id, slice.sourceRect.x, slice.sourceRect.y, slice.sourceRect.width, slice.sourceRect.height, source.width, source.height, px, py, tw, th);
+    }
 
-      const setId = terrainTileToSetId.get(cell.tileId);
-      const terrainSet = setId !== undefined ? terrainSetsMap.get(setId) : undefined;
+    for (const chunk of Object.values(tileMap.chunks) as TileMapChunk[]) {
+      for (let i = 0; i < chunk.tiles.length; i++) {
+        const cell = chunk.tiles[i];
+        if (!cell.tileId) continue;
 
-      if (terrainSet && terrainSet.mode === "blob47") {
-        const isAt = (tx: number, ty: number) => {
-          if (tx < 0 || ty < 0 || tx >= tileMap.mapWidthTiles || ty >= tileMap.mapHeightTiles) return false;
-          return terrainTileToSetId.get(getTileAt(tileMap, tx, ty).tileId) === setId;
-        };
-        const mask = calculateBlob47Mask(
-          isAt(x, y - 1), isAt(x, y + 1), isAt(x - 1, y), isAt(x + 1, y),
-          isAt(x - 1, y - 1), isAt(x + 1, y - 1), isAt(x - 1, y + 1), isAt(x + 1, y + 1),
-        );
-        resolveTileQuad(terrainSet.slots[mask] || getTerrainSetMarkerTileId(terrainSet), x, y);
-        continue;
-      }
+        const localX = i % tileMap.chunkWidthTiles;
+        const localY = Math.floor(i / tileMap.chunkWidthTiles);
+        const x = chunk.chunkX * tileMap.chunkWidthTiles + localX;
+        const y = chunk.chunkY * tileMap.chunkHeightTiles + localY;
+        const px = ox + x * tileW;
+        const py = oy + y * tileH;
 
-      if (terrainSet && (terrainSet.mode === "subtile" || terrainSet.mode === "rpgmaker")) {
-        const isAt = (tx: number, ty: number) => {
-          if (tx < 0 || ty < 0 || tx >= tileMap.mapWidthTiles || ty >= tileMap.mapHeightTiles) return false;
-          return terrainTileToSetId.get(getTileAt(tileMap, tx, ty).tileId) === setId;
-        };
-        const n = isAt(x, y - 1), s = isAt(x, y + 1), w2 = isAt(x - 1, y), e = isAt(x + 1, y);
-        const nw = isAt(x - 1, y - 1), ne = isAt(x + 1, y - 1), sw = isAt(x - 1, y + 1), se = isAt(x + 1, y + 1);
-        const sub = (qi: number, n1: boolean, n2: boolean, diag: boolean, xOff: number, yOff: number) => {
-          let st = 0;
-          if (n1 && n2) st = diag ? 4 : 3;
-          else if (n1) st = 1;
-          else if (n2) st = 2;
-          const subTileId = terrainSet.slots[qi * 5 + st];
-          if (!subTileId) return;
-          const t = tileById.get(subTileId);
-          const sl = t ? sliceById.get(t.sliceId) : undefined;
-          const src = sl ? sourceById.get(sl.sourceImageId) : undefined;
-          if (!sl || !src) return;
-          addQuad(
-            src.id,
-            sl.sourceRect.x, sl.sourceRect.y,
-            sl.sourceRect.width, sl.sourceRect.height,
-            src.width, src.height,
-            x * tileW + xOff * tileW / 2, y * tileH + yOff * tileH / 2,
-            tileW / 2, tileH / 2,
+        const setId = terrainTileToSetId.get(cell.tileId);
+        const terrainSet = setId !== undefined ? terrainSetsMap.get(setId) : undefined;
+
+        if (terrainSet && terrainSet.mode === "blob47") {
+          const isAt = (tx: number, ty: number) => {
+            if (tx < 0 || ty < 0 || tx >= tileMap.mapWidthTiles || ty >= tileMap.mapHeightTiles) return false;
+            return terrainTileToSetId.get(getTileAt(tileMap, tx, ty).tileId) === setId;
+          };
+          const mask = calculateBlob47Mask(
+            isAt(x, y - 1), isAt(x, y + 1), isAt(x - 1, y), isAt(x + 1, y),
+            isAt(x - 1, y - 1), isAt(x + 1, y - 1), isAt(x - 1, y + 1), isAt(x + 1, y + 1),
           );
-        };
-        sub(0, n, w2, nw, 0, 0);
-        sub(1, n, e, ne, 1, 0);
-        sub(2, s, w2, sw, 0, 1);
-        sub(3, s, e, se, 1, 1);
-        continue;
-      }
+          resolveTileQuad(terrainSet.slots[mask] || getTerrainSetMarkerTileId(terrainSet), px, py, tileW, tileH);
+          continue;
+        }
 
-      resolveTileQuad(cell.tileId, x, y);
+        if (terrainSet && (terrainSet.mode === "subtile" || terrainSet.mode === "rpgmaker")) {
+          const isAt = (tx: number, ty: number) => {
+            if (tx < 0 || ty < 0 || tx >= tileMap.mapWidthTiles || ty >= tileMap.mapHeightTiles) return false;
+            return terrainTileToSetId.get(getTileAt(tileMap, tx, ty).tileId) === setId;
+          };
+          const n = isAt(x, y - 1), s = isAt(x, y + 1), w2 = isAt(x - 1, y), e = isAt(x + 1, y);
+          const nw = isAt(x - 1, y - 1), ne = isAt(x + 1, y - 1), sw = isAt(x - 1, y + 1), se = isAt(x + 1, y + 1);
+          const sub = (qi: number, n1: boolean, n2: boolean, diag: boolean, xOff: number, yOff: number) => {
+            let st = 0;
+            if (n1 && n2) st = diag ? 4 : 3; else if (n1) st = 1; else if (n2) st = 2;
+            const subTileId = terrainSet.slots[qi * 5 + st];
+            if (!subTileId) return;
+            const t = tileById.get(subTileId);
+            const sl = t ? sliceById.get(t.sliceId) : undefined;
+            const src = sl ? sourceById.get(sl.sourceImageId) : undefined;
+            if (!sl || !src) return;
+            addQuad(src.id, sl.sourceRect.x, sl.sourceRect.y, sl.sourceRect.width, sl.sourceRect.height, src.width, src.height, px + xOff * tileW / 2, py + yOff * tileH / 2, tileW / 2, tileH / 2);
+          };
+          sub(0, n, w2, nw, 0, 0); sub(1, n, e, ne, 1, 0); sub(2, s, w2, sw, 0, 1); sub(3, s, e, se, 1, 1);
+          continue;
+        }
+
+        resolveTileQuad(cell.tileId, px, py, tileW, tileH);
+      }
     }
   }
 

@@ -85,9 +85,13 @@ export function useLevelEditor({
     let cancelled = false;
     const redraw = () => {
       if (cancelled) return;
+      const useWebGL = !!webglCanvasRef.current && !!scene;
+      if (useWebGL) {
+        renderTilesWebGL(webglCanvasRef.current!, state.project, scene!, state.editor.levelZoom);
+      }
       renderLevelCanvas(levelCanvasRef.current, state.project, scene, state.editor.levelZoom, undefined, () => {
         requestAnimationFrame(redraw);
-      });
+      }, useWebGL);
       renderSceneNodes(levelCanvasRef.current, state.project, scene, state.editor.selectedNodeId, state.editor.levelZoom);
     };
     redraw();
@@ -113,8 +117,12 @@ export function useLevelEditor({
     const tick = (now: number) => {
       if (levelAnimStartRef.current === null) levelAnimStartRef.current = now;
       levelAnimTimeRef.current = now - levelAnimStartRef.current;
-      const { project, scene: s, sceneTileMapData: stm, selectedNodeId: selId, zoom } = levelRenderStateRef.current;
-      renderLevelCanvas(levelCanvasRef.current, project, s, zoom, levelAnimTimeRef.current);
+      const { project, scene: s, selectedNodeId: selId, zoom } = levelRenderStateRef.current;
+      const useWebGL = !!webglCanvasRef.current && !!s;
+      if (useWebGL) {
+        renderTilesWebGL(webglCanvasRef.current!, project, s!, zoom, levelAnimTimeRef.current);
+      }
+      renderLevelCanvas(levelCanvasRef.current, project, s, zoom, levelAnimTimeRef.current, undefined, useWebGL);
       renderSceneNodes(levelCanvasRef.current, project, s, selId, zoom);
       levelAnimRafRef.current = requestAnimationFrame(tick);
     };
