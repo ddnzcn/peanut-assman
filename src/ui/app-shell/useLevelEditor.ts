@@ -1,27 +1,18 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import {
-  bucketFill,
-  fillRect,
-  getTileAt,
-  paintBrush,
-  paintTile,
-  sampleBrushFromTileMap,
-} from "../../level/editor";
-import { calculateBlob47Mask, getTerrainSetMarkerTileId } from "../../terrain";
+import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import type {
   AppState,
   ProjectAction,
   SceneDocument,
   SceneNode,
-  SceneNodeType,
   TerrainSet,
-  TileBrush,
   TileMapNodeData,
   TilesetTileAsset,
 } from "../../types";
-import { getCanvasPixel, getCanvasTile, renderLevelCanvas, renderSceneNodes } from "./canvas";
+import { renderLevelCanvas, renderSceneNodes } from "./canvas";
 import { renderTilesWebGL } from "./webglTileRenderer";
-import { computeSceneBounds, createNode, findNode, flattenNodes, getWorldTransform } from "../../scene/helpers";
+import { computeSceneBounds } from "../../scene/helpers";
+import { useTileEditor } from "./useTileEditor";
+import { useObjectEditor } from "./useObjectEditor";
 
 interface LevelEditorParams {
   state: AppState;
@@ -66,19 +57,23 @@ export function useLevelEditor({
   const levelAnimRafRef = useRef<number | null>(null);
   const levelAnimStartRef = useRef<number | null>(null);
   const levelAnimTimeRef = useRef<number>(0);
-  const levelRenderStateRef = useRef({ project: state.project, scene, sceneTileMapData, selectedNodeId: state.editor.selectedNodeId, zoom: state.editor.levelZoom, pan: levelPan });
-
-  const [cursorTile, setCursorTile] = useState<{ x: number; y: number } | null>(null);
-  const [objectPlaceType, setObjectPlaceType] = useState<SceneNodeType>("Sprite");
-  const [clipboardBrush, setClipboardBrush] = useState<TileBrush | null>(null);
-  const objectDragRef = useRef<{ nodeId: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
-  const [levelDragStart, setLevelDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [rectDragCurrent, setRectDragCurrent] = useState<{ x: number; y: number } | null>(null);
-  const [levelSelection, setLevelSelection] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const levelRenderStateRef = useRef({ project: state.project, scene, selectedNodeId: state.editor.selectedNodeId, zoom: state.editor.levelZoom, pan: levelPan });
 
   useEffect(() => {
-    levelRenderStateRef.current = { project: state.project, scene, sceneTileMapData, selectedNodeId: state.editor.selectedNodeId, zoom: state.editor.levelZoom, pan: levelPan };
-  }, [state.project, tileMapData, state.editor.levelZoom]);
+    levelRenderStateRef.current = { project: state.project, scene, selectedNodeId: state.editor.selectedNodeId, zoom: state.editor.levelZoom, pan: levelPan };
+  }, [state.project, scene, state.editor.selectedNodeId, state.editor.levelZoom, levelPan]);
+
+  const tileEditor = useTileEditor({
+    state, dispatch, scene, selectedNode, tileMapData,
+    selectedTerrainSet, selectedPaintTileId, setSelectedPaintTileId,
+    pushRecentTile, tilePalette, terrainTileToSetId,
+    canvasRef: levelCanvasRef, strokeBaseRef, strokeInProgressRef,
+  });
+
+  const objectEditor = useObjectEditor({
+    state, dispatch, scene, selectedNode,
+    canvasRef: levelCanvasRef,
+  });
 
   // Static canvas render
   useEffect(() => {
@@ -88,27 +83,19 @@ export function useLevelEditor({
     const redraw = () => {
       if (cancelled) return;
       const useWebGL = !!webglCanvasRef.current && !!scene;
-      if (useWebGL) {
-        renderTilesWebGL(webglCanvasRef.current!, state.project, scene!, state.editor.levelZoom);
-      }
-      renderLevelCanvas(levelCanvasRef.current, state.project, scene, state.editor.levelZoom, undefined, () => {
-        requestAnimationFrame(redraw);
-      }, useWebGL, levelPan);
+      if (useWebGL) renderTilesWebGL(webglCanvasRef.current!, state.project, scene!, state.editor.levelZoom);
+      renderLevelCanvas(levelCanvasRef.current, state.project, scene, state.editor.levelZoom, undefined, () => requestAnimationFrame(redraw), useWebGL, levelPan);
       renderSceneNodes(levelCanvasRef.current, state.project, scene, state.editor.selectedNodeId, state.editor.levelZoom, undefined, levelPan);
     };
     redraw();
     const frameId = requestAnimationFrame(redraw);
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(frameId);
-    };
+    return () => { cancelled = true; cancelAnimationFrame(frameId); };
   }, [sceneTileMapData, scene, state.project, state.editor.levelZoom, state.editor.workspace, state.editor.selectedNodeId]);
 
   // RAF loop for animated tiles
   useEffect(() => {
     const hasAnimatedTiles = (state.project.animatedTiles?.length ?? 0) > 0;
-    const isLevel = state.editor.workspace === "level";
-    if (!hasAnimatedTiles || !isLevel) {
+    if (!hasAnimatedTiles || state.editor.workspace !== "level") {
       if (levelAnimRafRef.current !== null) {
         cancelAnimationFrame(levelAnimRafRef.current);
         levelAnimRafRef.current = null;
@@ -121,9 +108,7 @@ export function useLevelEditor({
       levelAnimTimeRef.current = now - levelAnimStartRef.current;
       const { project, scene: s, selectedNodeId: selId, zoom, pan } = levelRenderStateRef.current;
       const useWebGL = !!webglCanvasRef.current && !!s;
-      if (useWebGL) {
-        renderTilesWebGL(webglCanvasRef.current!, project, s!, zoom, levelAnimTimeRef.current);
-      }
+      if (useWebGL) renderTilesWebGL(webglCanvasRef.current!, project, s!, zoom, levelAnimTimeRef.current);
       renderLevelCanvas(levelCanvasRef.current, project, s, zoom, levelAnimTimeRef.current, undefined, useWebGL, pan);
       renderSceneNodes(levelCanvasRef.current, project, s, selId, zoom, undefined, pan);
       levelAnimRafRef.current = requestAnimationFrame(tick);
@@ -145,281 +130,33 @@ export function useLevelEditor({
     const bounds = scene ? computeSceneBounds(scene.root) : { width: 1024, height: 768 };
     const vpW = bounds.width * state.editor.levelZoom;
     const vpH = bounds.height * state.editor.levelZoom;
-    const centerViewport = () => {
-      setLevelPan({
-        x: (stage.clientWidth - vpW) * 0.5,
-        y: (stage.clientHeight - vpH) * 0.5,
-      });
-    };
-    const initialFrame = requestAnimationFrame(() => {
-      centerViewport();
-      requestAnimationFrame(centerViewport);
-    });
+    const centerViewport = () => setLevelPan({ x: (stage.clientWidth - vpW) * 0.5, y: (stage.clientHeight - vpH) * 0.5 });
+    const initialFrame = requestAnimationFrame(() => { centerViewport(); requestAnimationFrame(centerViewport); });
     const resizeObserver = new ResizeObserver(centerViewport);
     resizeObserver.observe(stage);
-    return () => {
-      cancelAnimationFrame(initialFrame);
-      resizeObserver.disconnect();
-    };
+    return () => { cancelAnimationFrame(initialFrame); resizeObserver.disconnect(); };
   }, [selectedNode?.id, state.editor.levelZoom, state.editor.workspace, setLevelPan]);
 
-  function resolveTerrainTileId(
-    tm: TileMapNodeData,
-    tileX: number,
-    tileY: number,
-    terrainSet: TerrainSet,
-  ): number {
-    const isTerrainAt = (x: number, y: number) => {
-      if (x < 0 || y < 0 || x >= tm.mapWidthTiles || y >= tm.mapHeightTiles) return false;
-      return terrainTileToSetId.get(getTileAt(tm, x, y).tileId) === terrainSet.id;
-    };
-    if (terrainSet.mode === "subtile" || terrainSet.mode === "rpgmaker") {
-      return getTerrainSetMarkerTileId(terrainSet);
-    }
-    const n = isTerrainAt(tileX, tileY - 1);
-    const s = isTerrainAt(tileX, tileY + 1);
-    const w = isTerrainAt(tileX - 1, tileY);
-    const e = isTerrainAt(tileX + 1, tileY);
-    if (terrainSet.mode === "blob47") {
-      const blobMask = calculateBlob47Mask(
-        n, s, w, e,
-        isTerrainAt(tileX - 1, tileY - 1),
-        isTerrainAt(tileX + 1, tileY - 1),
-        isTerrainAt(tileX - 1, tileY + 1),
-        isTerrainAt(tileX + 1, tileY + 1),
-      );
-      return terrainSet.slots[blobMask] || getTerrainSetMarkerTileId(terrainSet);
-    }
-    let mask = 0;
-    if (n) mask |= 1;
-    if (s) mask |= 2;
-    if (w) mask |= 4;
-    if (e) mask |= 8;
-    return terrainSet.slots[mask] || getTerrainSetMarkerTileId(terrainSet);
-  }
-
-  function applyTerrainBrush(
-    tm: TileMapNodeData,
-    tileX: number,
-    tileY: number,
-    terrainSet: TerrainSet,
-  ): TileMapNodeData {
-    let next = paintTile(tm, tileX, tileY, getTerrainSetMarkerTileId(terrainSet));
-    for (let sy = tileY - 1; sy <= tileY + 1; sy++) {
-      for (let sx = tileX - 1; sx <= tileX + 1; sx++) {
-        if (sx < 0 || sy < 0 || sx >= tm.mapWidthTiles || sy >= tm.mapHeightTiles) continue;
-        if (terrainTileToSetId.get(getTileAt(next, sx, sy).tileId) !== terrainSet.id) continue;
-        next = paintTile(next, sx, sy, resolveTerrainTileId(next, sx, sy, terrainSet));
-      }
-    }
-    return next;
-  }
-
-  function getSelectedTileMapOffset(): { x: number; y: number } {
-    if (!scene || !selectedNode || selectedNode.data.type !== "TileMap") return { x: 0, y: 0 };
-    const wt = getWorldTransform(scene.root, selectedNode.id);
-    return { x: wt.x, y: wt.y };
-  }
-
-  function hitTestSceneNodes(root: SceneNode, px: number, py: number): SceneNode | null {
-    const nodes = flattenNodes(root).reverse();
-    for (const node of nodes) {
-      if (node.data.type === "Root" || node.data.type === "Node2D") continue;
-      if (!node.visible) continue;
-      const wt = getWorldTransform(root, node.id);
-      let w = 16, h = 16;
-      if (node.data.type === "TileMap") { w = node.data.mapWidthTiles * node.data.tileWidth; h = node.data.mapHeightTiles * node.data.tileHeight; }
-      else if (node.data.type === "CollisionShape") { w = node.data.width; h = node.data.height; }
-      else if (node.data.type === "Area") { w = node.data.width; h = node.data.height; }
-      else if (node.data.type === "Light2D") { w = node.data.radius * 2; h = node.data.radius * 2; }
-      if (px >= wt.x && px <= wt.x + w && py >= wt.y && py <= wt.y + h) {
-        return node;
-      }
-    }
-    return null;
-  }
-
-  function brushOrigin(point: { x: number; y: number }, brush: TileBrush | null) {
-    if (!brush) return point;
-    return { x: point.x - Math.floor(brush.width / 2), y: point.y - Math.floor(brush.height / 2) };
-  }
-
-  function resolveActiveBrush(): TileBrush | null {
-    if (state.editor.activeBrushId === -1) return clipboardBrush;
-    return (state.editor.savedBrushes ?? []).find((b) => b.id === state.editor.activeBrushId) ?? null;
-  }
-
-  function dispatchTileMapUpdate(nextData: TileMapNodeData, silent: boolean) {
-    if (!scene || !selectedNode) return;
-    const action = silent ? "updateSceneNodeDataSilent" : "updateSceneNodeData";
-    dispatch({ type: action, sceneId: scene.id, nodeId: selectedNode.id, data: nextData });
-  }
-
-  function handleCopy() {
-    if (!tileMapData || !levelSelection) return;
-    const { x0, y0, x1, y1 } = levelSelection;
-    const sampled = sampleBrushFromTileMap(tileMapData, x0, y0, x1, y1);
-    setClipboardBrush({
-      id: -1,
-      name: "clipboard",
-      width: Math.abs(x1 - x0) + 1,
-      height: Math.abs(y1 - y0) + 1,
-      tiles: sampled.tiles,
-    });
-  }
-
-  function handleCut() {
-    if (!tileMapData || !levelSelection || !scene || !selectedNode) return;
-    const { x0, y0, x1, y1 } = levelSelection;
-    const sampled = sampleBrushFromTileMap(tileMapData, x0, y0, x1, y1);
-    setClipboardBrush({
-      id: -1,
-      name: "clipboard",
-      width: Math.abs(x1 - x0) + 1,
-      height: Math.abs(y1 - y0) + 1,
-      tiles: sampled.tiles,
-    });
-    const nextData = fillRect(tileMapData, Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1), 0);
-    dispatch({ type: "updateSceneNodeData", sceneId: scene.id, nodeId: selectedNode.id, data: nextData });
-    setLevelSelection(null);
-  }
-
-  function handlePaste() {
-    if (!clipboardBrush) return;
-    dispatch({ type: "setActiveBrush", brushId: -1 });
-    dispatch({ type: "setLevelTool", tool: "brush" });
-  }
-
+  // Composed pointer handlers
   function handleLevelPointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
     if (!scene || spaceHeld || state.editor.levelTool === "hand" || event.button === 1) return;
-
-    if (state.editor.levelTool === "objectPlace") {
-      const pixel = getCanvasPixel(event, levelCanvasRef.current, state.editor.levelZoom);
-      if (!pixel) return;
-      const parentId = selectedNode?.id ?? scene.root.id;
-      const nodeId = `node-${state.project.idCounters.node}`;
-      const node = createNode(objectPlaceType, objectPlaceType, nodeId);
-      node.transform = { ...node.transform, x: pixel.x, y: pixel.y };
-      dispatch({ type: "addChildNode", sceneId: scene.id, parentId, node });
-      return;
-    }
-
-    if (state.editor.levelTool === "objectSelect") {
-      const pixel = getCanvasPixel(event, levelCanvasRef.current, state.editor.levelZoom);
-      if (!pixel) return;
-      const hitNode = hitTestSceneNodes(scene.root, pixel.x, pixel.y);
-      if (hitNode) {
-        dispatch({ type: "selectNode", nodeId: hitNode.id });
-        objectDragRef.current = {
-          nodeId: hitNode.id,
-          startX: pixel.x,
-          startY: pixel.y,
-          origX: hitNode.transform.x,
-          origY: hitNode.transform.y,
-        };
-      }
-      return;
-    }
-
-    if (!tileMapData || !selectedNode) return;
-    const point = getCanvasTile(event, levelCanvasRef.current, tileMapData, state.editor.levelZoom, getSelectedTileMapOffset().x, getSelectedTileMapOffset().y);
-    if (!point) return;
-
-    if (event.altKey) {
-      const pickedTileId = getTileAt(tileMapData, point.x, point.y).tileId;
-      if (pickedTileId) {
-        setSelectedPaintTileId(pickedTileId);
-        pushRecentTile(pickedTileId);
-        dispatch({ type: "setLevelTool", tool: "brush" });
-      }
-      return;
-    }
-
-    const paintTileId = selectedPaintTileId || tilePalette[0]?.tileId || 0;
-    const activeBrush = resolveActiveBrush();
-
-    if (state.editor.levelTool === "brush") {
-      strokeBaseRef.current = selectedNode;
-      strokeInProgressRef.current = true;
-      const origin = brushOrigin(point, activeBrush);
-      const nextData = activeBrush
-        ? paintBrush(tileMapData, origin.x, origin.y, activeBrush)
-        : paintTile(tileMapData, point.x, point.y, paintTileId);
-      dispatchTileMapUpdate(nextData, true);
-    } else if (state.editor.levelTool === "terrain" && selectedTerrainSet) {
-      strokeBaseRef.current = selectedNode;
-      strokeInProgressRef.current = true;
-      dispatchTileMapUpdate(applyTerrainBrush(tileMapData, point.x, point.y, selectedTerrainSet), true);
-    } else if (state.editor.levelTool === "erase") {
-      strokeBaseRef.current = selectedNode;
-      strokeInProgressRef.current = true;
-      dispatchTileMapUpdate(paintTile(tileMapData, point.x, point.y, 0), true);
-    } else if (state.editor.levelTool === "bucket") {
-      dispatchTileMapUpdate(bucketFill(tileMapData, point.x, point.y, paintTileId), false);
-    } else if (state.editor.levelTool === "select") {
-      setLevelDragStart(point);
-      setLevelSelection(null);
-    } else if (state.editor.levelTool === "rect") {
-      setLevelDragStart(point);
-    }
+    if (objectEditor.objectPointerDown(event)) return;
+    tileEditor.tilePointerDown(event);
   }
 
   function handleLevelPointerMove(event: ReactPointerEvent<HTMLCanvasElement>) {
-    if (objectDragRef.current && scene && event.buttons === 1) {
-      const pixel = getCanvasPixel(event, levelCanvasRef.current, state.editor.levelZoom);
-      if (!pixel) return;
-      const drag = objectDragRef.current;
-      const dx = pixel.x - drag.startX;
-      const dy = pixel.y - drag.startY;
-      dispatch({
-        type: "updateSceneNodeSilent",
-        sceneId: scene.id,
-        nodeId: drag.nodeId,
-        patch: { transform: { ...findNode(scene.root, drag.nodeId)?.transform ?? { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 }, x: drag.origX + dx, y: drag.origY + dy } },
-      });
-      return;
-    }
-    if (!tileMapData || spaceHeld) return;
-    const point = getCanvasTile(event, levelCanvasRef.current, tileMapData, state.editor.levelZoom, getSelectedTileMapOffset().x, getSelectedTileMapOffset().y);
-    if (!point) return;
-
-    setCursorTile(point);
-    const paintTileId = selectedPaintTileId || tilePalette[0]?.tileId || 0;
-    const activeBrush = resolveActiveBrush();
-
-    if (state.editor.levelTool === "brush" && event.buttons === 1) {
-      const origin = brushOrigin(point, activeBrush);
-      const nextData = activeBrush
-        ? paintBrush(tileMapData, origin.x, origin.y, activeBrush)
-        : paintTile(tileMapData, point.x, point.y, paintTileId);
-      dispatchTileMapUpdate(nextData, true);
-    }
-    if (state.editor.levelTool === "terrain" && event.buttons === 1 && selectedTerrainSet) {
-      dispatchTileMapUpdate(applyTerrainBrush(tileMapData, point.x, point.y, selectedTerrainSet), true);
-    }
-    if (state.editor.levelTool === "erase" && event.buttons === 1) {
-      dispatchTileMapUpdate(paintTile(tileMapData, point.x, point.y, 0), true);
-    }
-    if (state.editor.levelTool === "rect" || state.editor.levelTool === "select") {
-      setRectDragCurrent(point);
-    }
+    if (objectEditor.objectPointerMove(event)) return;
+    if (spaceHeld) return;
+    tileEditor.tilePointerMove(event);
   }
 
   function handleLevelPointerUp(event: ReactPointerEvent<HTMLCanvasElement>) {
-    if (objectDragRef.current) {
-      objectDragRef.current = null;
-      return;
-    }
+    if (objectEditor.objectPointerUp()) return;
     if (strokeInProgressRef.current && strokeBaseRef.current && scene && selectedNode) {
       dispatch({
         type: "commitSceneStroke",
         sceneId: scene.id,
-        baseRoot: strokeBaseRef.current.data.type === "TileMap"
-          ? (() => {
-              const sceneDoc = state.project.scenes.find((s) => s.id === scene.id);
-              return strokeBaseRef.current as unknown as SceneNode;
-            })()
-          : strokeBaseRef.current,
+        baseRoot: strokeBaseRef.current,
         currentRoot: (() => {
           const sceneDoc = state.project.scenes.find((s) => s.id === scene.id);
           return sceneDoc?.root ?? strokeBaseRef.current!;
@@ -428,36 +165,11 @@ export function useLevelEditor({
       strokeInProgressRef.current = false;
       strokeBaseRef.current = null;
     }
-    if (!tileMapData || !levelDragStart) {
-      setLevelDragStart(null);
-      return;
-    }
-    const point = getCanvasTile(event, levelCanvasRef.current, tileMapData, state.editor.levelZoom, getSelectedTileMapOffset().x, getSelectedTileMapOffset().y);
-    if (!point) {
-      setLevelDragStart(null);
-      return;
-    }
-    if (state.editor.levelTool === "select") {
-      setLevelSelection({ x0: levelDragStart.x, y0: levelDragStart.y, x1: point.x, y1: point.y });
-      setLevelDragStart(null);
-      setRectDragCurrent(null);
-      return;
-    }
-    if (state.editor.levelTool !== "rect") {
-      setLevelDragStart(null);
-      return;
-    }
-    const paintTileId = selectedPaintTileId || tilePalette[0]?.tileId || 0;
-    dispatchTileMapUpdate(
-      fillRect(tileMapData, levelDragStart.x, levelDragStart.y, point.x, point.y, paintTileId),
-      false,
-    );
-    setLevelDragStart(null);
-    setRectDragCurrent(null);
+    tileEditor.tilePointerUp(event);
   }
 
   function handleLevelPointerLeave() {
-    setCursorTile(null);
+    tileEditor.tilePointerLeave();
   }
 
   const levelCursorClass =
@@ -474,21 +186,24 @@ export function useLevelEditor({
     levelCanvasRef,
     webglCanvasRef,
     levelAnimTimeRef,
-    levelSelection,
-    setLevelSelection,
-    cursorTile,
-    clipboardBrush,
-    rectDragStart: levelDragStart,
-    rectDragCurrent,
     levelCursorClass,
+    // From tile editor
+    levelSelection: tileEditor.levelSelection,
+    setLevelSelection: tileEditor.setLevelSelection,
+    cursorTile: tileEditor.cursorTile,
+    clipboardBrush: tileEditor.clipboardBrush,
+    rectDragStart: tileEditor.rectDragStart,
+    rectDragCurrent: tileEditor.rectDragCurrent,
+    handleCopy: tileEditor.handleCopy,
+    handleCut: tileEditor.handleCut,
+    handlePaste: tileEditor.handlePaste,
+    // From object editor
+    objectPlaceType: objectEditor.objectPlaceType,
+    setObjectPlaceType: objectEditor.setObjectPlaceType,
+    // Composed handlers
     handleLevelPointerDown,
     handleLevelPointerMove,
     handleLevelPointerUp,
     handleLevelPointerLeave,
-    objectPlaceType,
-    setObjectPlaceType,
-    handleCopy,
-    handleCut,
-    handlePaste,
   };
 }
