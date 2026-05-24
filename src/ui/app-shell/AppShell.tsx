@@ -750,7 +750,7 @@ export function AppShell() {
                 onSetModule={setAtlasModule}
               />
             ) : selectedNode && scene ? (
-              <NodeInspector scene={scene} node={selectedNode} dispatch={dispatch} />
+              <NodeInspector scene={scene} node={selectedNode} project={state.project} dispatch={dispatch} />
             ) : null}
             </div>
           </div>

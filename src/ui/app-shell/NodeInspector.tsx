@@ -4,8 +4,10 @@ import type {
   CollisionShapeNodeData,
   Light2DNodeData,
   ProjectAction,
+  ProjectDocument,
   SceneDocument,
   SceneNode,
+  SliceAsset,
   SpriteNodeData,
   TileMapNodeData,
   TileMapProjection,
@@ -44,10 +46,11 @@ function DraftInput(props: {
 interface NodeInspectorProps {
   scene: SceneDocument;
   node: SceneNode;
+  project: ProjectDocument;
   dispatch: React.Dispatch<ProjectAction>;
 }
 
-export function NodeInspector({ scene, node, dispatch }: NodeInspectorProps) {
+export function NodeInspector({ scene, node, project, dispatch }: NodeInspectorProps) {
   function updateNode(patch: Partial<SceneNode>) {
     dispatch({ type: "updateSceneNode", sceneId: scene.id, nodeId: node.id, patch });
   }
@@ -108,7 +111,7 @@ export function NodeInspector({ scene, node, dispatch }: NodeInspectorProps) {
 
       {/* Type-specific */}
       {node.data.type === "TileMap" && <TileMapInspector data={node.data} onUpdate={(d) => updateData(d)} />}
-      {node.data.type === "Sprite" && <SpriteInspector data={node.data} onUpdate={(d) => updateData(d)} />}
+      {node.data.type === "Sprite" && <SpriteInspector data={node.data} slices={project.slices} sprites={project.sprites} onUpdate={(d) => updateData(d)} />}
       {node.data.type === "CollisionShape" && <CollisionInspector data={node.data} onUpdate={(d) => updateData(d)} />}
       {node.data.type === "Area" && <AreaInspector data={node.data} onUpdate={(d) => updateData(d)} />}
       {node.data.type === "Light2D" && <LightInspector data={node.data} onUpdate={(d) => updateData(d)} />}
@@ -147,17 +150,28 @@ function TileMapInspector({ data, onUpdate }: { data: TileMapNodeData; onUpdate:
   );
 }
 
-function SpriteInspector({ data, onUpdate }: { data: SpriteNodeData; onUpdate: (d: SpriteNodeData) => void }) {
+function SpriteInspector({ data, slices, sprites, onUpdate }: {
+  data: SpriteNodeData;
+  slices: SliceAsset[];
+  sprites: import("../../types").SpriteAsset[];
+  onUpdate: (d: SpriteNodeData) => void;
+}) {
+  const atlasSliceIds = new Set(sprites.filter((s) => s.includeInAtlas).map((s) => s.sliceId));
+  const availableSlices = slices.filter((s) => atlasSliceIds.has(s.id));
   return (
     <>
       <div className="inspector-section-label">Sprite</div>
       <label>
-        Slice ID
-        <input
+        Slice
+        <select
           value={data.sliceId}
           onChange={(e) => onUpdate({ ...data, sliceId: e.target.value })}
-          placeholder="slice-1"
-        />
+        >
+          <option value="">-- none --</option>
+          {availableSlices.map((slice) => (
+            <option key={slice.id} value={slice.id}>{slice.name}</option>
+          ))}
+        </select>
       </label>
       <label className="checkbox-row">
         <span>Flip H</span>
