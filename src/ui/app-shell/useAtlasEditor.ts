@@ -4,7 +4,6 @@ import { buildAtlasFromProject } from "../../model/selectors";
 import type {
   AppState,
   GridSliceOptions,
-  LevelDocument,
   ManualSliceRect,
   PackedAtlas,
   ProjectAction,
@@ -23,7 +22,8 @@ interface AtlasEditorParams {
   dispatch: React.Dispatch<ProjectAction>;
   selectedSourceImage: SourceImageAsset | null;
   selectedSlices: SliceAsset[];
-  level: LevelDocument | null;
+  tileMapSceneId: string | null;
+  tileMapNodeId: string | null;
   effectiveLevelTileIds: number[];
   spaceHeld: boolean;
   setSlicerPan: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>;
@@ -35,7 +35,8 @@ export function useAtlasEditor({
   dispatch,
   selectedSourceImage,
   selectedSlices,
-  level,
+  tileMapSceneId,
+  tileMapNodeId,
   effectiveLevelTileIds,
   spaceHeld,
   setSlicerPan,
@@ -297,8 +298,8 @@ export function useAtlasEditor({
   }
 
   function addSelectedSlicesToLevel(): boolean {
-    if (!level) {
-      setError("Select a level first.");
+    if (!tileMapSceneId || !tileMapNodeId) {
+      setError("Select a TileMap node first.");
       return false;
     }
     const existingTileBySliceId = new Map(state.project.tiles.map((tile) => [tile.sliceId, tile]));
@@ -314,7 +315,11 @@ export function useAtlasEditor({
       setError("Select tile-tagged slices that are not already in the current level.");
       return false;
     }
-    dispatch({ type: "addLevelTiles", levelId: level.id, sliceIds: tileSliceIds });
+    if (!tileMapSceneId || !tileMapNodeId) {
+      setError("No TileMap node selected.");
+      return false;
+    }
+    dispatch({ type: "addSceneTiles", sceneId: tileMapSceneId, nodeId: tileMapNodeId, sliceIds: tileSliceIds });
     return true;
   }
 

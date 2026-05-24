@@ -43,7 +43,7 @@ import { TileAssetPreview } from "../app-shell/shared";
 import { clamp } from "../../utils";
 import { sampleBrushFromLevel } from "../../level/editor";
 import type { AnimatedTileAsset, LevelDocument, LevelLayer, ProjectDocument, TileBrush, TilesetTileAsset } from "../../types";
-import "./styles-v2.css";
+import "./styles.css";
 
 // ---------- Animated tile palette cell ----------
 
@@ -72,7 +72,7 @@ function AnimatedTilePaletteCell(props: {
 
   return (
     <button
-      className={props.selected ? "v2-tile-btn active" : "v2-tile-btn"}
+      className={props.selected ? "pn-tile-btn active" : "pn-tile-btn"}
       onClick={props.onClick}
       title={props.animatedTile.name}
       data-tooltip={props.animatedTile.name}
@@ -171,14 +171,14 @@ function TilePalette({
 
   function renderTileGrid(tileList: TilesetTileAsset[]) {
     return (
-      <div className="v2-tile-palette-grid">
+      <div className="pn-tile-palette-grid">
         {tileList.map((tile) => (
           <button
             key={tile.tileId}
             className={
               tile.tileId === selectedPaintTileId
-                ? "v2-tile-btn active"
-                : "v2-tile-btn"
+                ? "pn-tile-btn active"
+                : "pn-tile-btn"
             }
             onClick={() => onSelectTile(tile.tileId)}
             title={tile.name}
@@ -193,8 +193,8 @@ function TilePalette({
   }
 
   return (
-    <div className="v2-tile-palette">
-      <div className="v2-tile-palette-header">
+    <div className="pn-tile-palette">
+      <div className="pn-tile-palette-header">
         <Search size={12} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
         <input
           type="text"
@@ -213,23 +213,23 @@ function TilePalette({
           }}
         />
       </div>
-      <div className="v2-tile-palette-scroll">
+      <div className="pn-tile-palette-scroll">
         {pinnedTiles.length > 0 && (
           <>
-            <div className="v2-tile-palette-section-label">Pinned</div>
+            <div className="pn-tile-palette-section-label">Pinned</div>
             {renderTileGrid(pinnedTiles)}
           </>
         )}
         {recentTiles.length > 0 && (
           <>
-            <div className="v2-tile-palette-section-label">Recent</div>
+            <div className="pn-tile-palette-section-label">Recent</div>
             {renderTileGrid(recentTiles)}
           </>
         )}
         {allTiles.length > 0 && (
           <>
             {(pinnedTiles.length > 0 || recentTiles.length > 0) && (
-              <div className="v2-tile-palette-section-label">All Tiles</div>
+              <div className="pn-tile-palette-section-label">All Tiles</div>
             )}
             {renderTileGrid(allTiles)}
           </>
@@ -241,8 +241,8 @@ function TilePalette({
         )}
         {animatedTiles.length > 0 && (
           <>
-            <div className="v2-tile-palette-section-label">Animated</div>
-            <div className="v2-tile-palette-grid">
+            <div className="pn-tile-palette-section-label">Animated</div>
+            <div className="pn-tile-palette-grid">
               {animatedTiles.map((anim) => (
                 <AnimatedTilePaletteCell
                   key={anim.id}
@@ -257,12 +257,12 @@ function TilePalette({
         )}
 
         {/* ---- Brushes section ---- */}
-        <div className="v2-tile-palette-section-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div className="pn-tile-palette-section-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span>Brushes</span>
           <div style={{ display: "flex", gap: 4 }}>
             {levelSelection && level && layer && (
               <button
-                className="v2-tool-btn"
+                className="pn-tool-btn"
                 style={{ width: 18, height: 18, fontSize: "0.65rem", padding: 0 }}
                 title="Save selection as brush"
                 onClick={() => {
@@ -276,7 +276,7 @@ function TilePalette({
             )}
             {selectedPaintTileId > 0 && (
               <button
-                className="v2-tool-btn"
+                className="pn-tool-btn"
                 style={{ width: 18, height: 18, fontSize: "0.65rem", padding: 0 }}
                 title="Save current tile as 1×1 brush"
                 onClick={() => onSaveBrush({ name: `brush_${String(savedBrushes.length + 1).padStart(2, "0")}`, width: 1, height: 1, tiles: [selectedPaintTileId] })}
@@ -295,16 +295,16 @@ function TilePalette({
             {savedBrushes.map((brush) => (
               <div
                 key={brush.id}
-                className={brush.id === activeBrushId ? "v2-brush-row active" : "v2-brush-row"}
+                className={brush.id === activeBrushId ? "pn-brush-row active" : "pn-brush-row"}
                 onClick={() => onSelectBrush(brush.id === activeBrushId ? null : brush.id)}
               >
                 <BrushPreview brush={brush} project={project} scale={1} />
-                <span className="v2-brush-name">{brush.name}</span>
+                <span className="pn-brush-name">{brush.name}</span>
                 <span style={{ marginLeft: "auto", fontSize: "0.65rem", color: "var(--text-muted)", flexShrink: 0 }}>
                   {brush.width}×{brush.height}
                 </span>
                 <button
-                  className="v2-tool-btn"
+                  className="pn-tool-btn"
                   style={{ width: 16, height: 16, padding: 0, flexShrink: 0 }}
                   title="Delete brush"
                   onClick={(e) => { e.stopPropagation(); onDeleteBrush(brush.id); }}
@@ -334,7 +334,7 @@ function V2ToolBtn({ label, shortcut, active, onClick, children }: V2ToolBtnProp
   const tooltip = shortcut ? `${label} (${shortcut})` : label;
   return (
     <button
-      className={active ? "v2-tool-btn active" : "v2-tool-btn"}
+      className={active ? "pn-tool-btn active" : "pn-tool-btn"}
       onClick={onClick}
       aria-label={tooltip}
       data-tooltip={tooltip}
@@ -344,9 +344,9 @@ function V2ToolBtn({ label, shortcut, active, onClick, children }: V2ToolBtnProp
   );
 }
 
-// ---------- AppShellV2 ----------
+// ---------- AppShell ----------
 
-export function AppShellV2() {
+export function AppShell() {
   const controller = useAppShellController();
   const {
     state,
@@ -464,31 +464,31 @@ export function AppShellV2() {
   }
 
   return (
-    <div className={`v2-shell workspace-${workspace}`}>
+    <div className={`pn-shell workspace-${workspace}`}>
       {/* ---- TOP BAR ---- */}
-      <header className="v2-topbar">
-        <div className="v2-logo">
-          <span className="v2-logo-dot" />
+      <header className="pn-topbar">
+        <div className="pn-logo">
+          <span className="pn-logo-dot" />
           Peanut
         </div>
 
-        <nav className="v2-workspace-tabs">
+        <nav className="pn-workspace-tabs">
           <button
-            className={workspace === "atlas" ? "v2-tab-btn active" : "v2-tab-btn"}
+            className={workspace === "atlas" ? "pn-tab-btn active" : "pn-tab-btn"}
             onClick={() => dispatch({ type: "setWorkspace", workspace: "atlas" })}
           >
             <Package size={13} />
             Atlas
           </button>
           <button
-            className={workspace === "level" ? "v2-tab-btn active" : "v2-tab-btn"}
+            className={workspace === "level" ? "pn-tab-btn active" : "pn-tab-btn"}
             onClick={() => dispatch({ type: "setWorkspace", workspace: "level" })}
           >
             <Map size={13} />
             Level
           </button>
           <button
-            className={workspace === "animation" ? "v2-tab-btn active" : "v2-tab-btn"}
+            className={workspace === "animation" ? "pn-tab-btn active" : "pn-tab-btn"}
             onClick={() => dispatch({ type: "setWorkspace", workspace: "animation" })}
           >
             <Film size={13} />
@@ -496,7 +496,7 @@ export function AppShellV2() {
           </button>
         </nav>
 
-        <div className="v2-topbar-actions">
+        <div className="pn-topbar-actions">
           <details className="app-menu">
             <summary className="app-menu-trigger" style={{ fontSize: "0.82rem" }}>
               File <ChevronDown size={10} style={{ display: "inline", marginLeft: 2 }} />
@@ -564,7 +564,7 @@ export function AppShellV2() {
 
       {/* ---- LEFT NAVIGATOR (level mode only) ---- */}
       {workspace === "level" && level ? (
-        <aside className="v2-sidebar-left">
+        <aside className="pn-sidebar-left">
           <LevelNavigator
             levels={state.project.levels}
             selectedLevelId={level.id}
@@ -644,7 +644,7 @@ export function AppShellV2() {
           />
         </aside>
       ) : workspace === "atlas" ? (
-        <aside className="v2-sidebar-left">
+        <aside className="pn-sidebar-left">
           <AtlasAssetsPanel
             project={state.project}
             sourceImages={state.project.sourceImages}
@@ -668,7 +668,7 @@ export function AppShellV2() {
       ) : null}
 
       {/* ---- MAIN WORKSPACE ---- */}
-      <section className="v2-workspace">
+      <section className="pn-workspace">
         {workspace === "atlas" ? (
           <AtlasWorkspace
             atlas={atlas}
@@ -755,14 +755,14 @@ export function AppShellV2() {
 
       {/* ---- RIGHT PANEL (inspector + palette) ---- */}
       {workspace !== "animation" && (
-        <aside className="v2-sidebar-right">
+        <aside className="pn-sidebar-right">
           {/* Inspector section */}
-          <div className="v2-right-inspector">
-            <div className="v2-panel-header">
+          <div className="pn-right-inspector">
+            <div className="pn-panel-header">
               <Settings size={12} />
               <h3>Inspector</h3>
             </div>
-            <div className="v2-right-inspector-content">
+            <div className="pn-right-inspector-content">
             {workspace === "atlas" ? (
               <AtlasInspector
                 atlas={atlas}
@@ -862,12 +862,12 @@ export function AppShellV2() {
           {/* Divider and tile palette (level mode only) */}
           {workspace === "level" && (
             <>
-              <div className="v2-right-divider" />
-              <div className="v2-panel-header" style={{ paddingBottom: "0.35rem" }}>
+              <div className="pn-right-divider" />
+              <div className="pn-panel-header" style={{ paddingBottom: "0.35rem" }}>
                 <Layers size={12} />
                 <h3>Tile Palette</h3>
                 <button
-                  className={assetTrayOpen ? "v2-tool-btn active" : "v2-tool-btn"}
+                  className={assetTrayOpen ? "pn-tool-btn active" : "pn-tool-btn"}
                   style={{ width: 22, height: 22 }}
                   onClick={() => setAssetTrayOpen(!assetTrayOpen)}
                   title="Add tiles / manage assets"
@@ -992,11 +992,11 @@ export function AppShellV2() {
 
       {/* ---- FLOATING TOOLBAR ---- */}
       {workspace !== "animation" && (
-        <footer className="v2-toolbar">
+        <footer className="pn-toolbar">
           {workspace === "level" ? (
             <>
               {/* History group */}
-              <div className="v2-dock-group">
+              <div className="pn-dock-group">
                 <V2ToolBtn label="Undo" shortcut="Cmd/Ctrl+Z" active={false} onClick={() => dispatch({ type: "undo" })}>
                   <Undo2 />
                 </V2ToolBtn>
@@ -1006,8 +1006,8 @@ export function AppShellV2() {
               </div>
 
               {/* Active tile group */}
-              <div className="v2-dock-group">
-                <div className="v2-active-tile-preview" title="Current brush tile" onClick={() => setAssetTrayOpen(true)} style={{ cursor: "pointer" }}>
+              <div className="pn-dock-group">
+                <div className="pn-active-tile-preview" title="Current brush tile" onClick={() => setAssetTrayOpen(true)} style={{ cursor: "pointer" }}>
                   <TileAssetPreview
                     project={state.project}
                     tile={state.project.tiles.find((t) => t.tileId === selectedPaintTileId) ?? null}
@@ -1017,7 +1017,7 @@ export function AppShellV2() {
               </div>
 
               {/* Tools group */}
-              <div className="v2-dock-group">
+              <div className="pn-dock-group">
                 <V2ToolBtn label="Select" shortcut="V" active={state.editor.levelTool === "select"} onClick={() => dispatch({ type: "setLevelTool", tool: "select" })}>
                   <MousePointer2 />
                 </V2ToolBtn>
@@ -1053,7 +1053,7 @@ export function AppShellV2() {
               </div>
 
               {/* Zoom group */}
-              <div className="v2-dock-group">
+              <div className="pn-dock-group">
                 <V2ToolBtn label="Zoom Out" active={false} onClick={() => dispatch({ type: "setLevelZoom", zoom: clamp(state.editor.levelZoom * 0.9, 0.5, 8) })}>
                   <ZoomOut />
                 </V2ToolBtn>
@@ -1068,7 +1068,7 @@ export function AppShellV2() {
           ) : workspace === "atlas" && atlasModule === "slicer" ? (
             <>
               {/* Slicer mode group */}
-              <div className="v2-dock-group">
+              <div className="pn-dock-group">
                 <V2ToolBtn label="Grid Slicer" active={state.editor.slicerMode === "grid"} onClick={() => dispatch({ type: "setSlicerMode", mode: "grid" })}>
                   <Grid3x3 />
                 </V2ToolBtn>
@@ -1078,7 +1078,7 @@ export function AppShellV2() {
               </div>
 
               {/* Zoom group */}
-              <div className="v2-dock-group">
+              <div className="pn-dock-group">
                 <V2ToolBtn label="Zoom Out" active={false} onClick={() => dispatch({ type: "setSlicerZoom", zoom: clamp(state.editor.slicerZoom * 0.9, 0.25, 8) })}>
                   <ZoomOut />
                 </V2ToolBtn>

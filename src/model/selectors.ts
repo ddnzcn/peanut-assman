@@ -2,34 +2,36 @@ import { buildAtlas, type RuntimeAnimTileData } from "../atlas";
 import { buildRuntimeSpriteCatalog } from "../export/runtimeSprites";
 import type {
   AppState,
-  LevelDocument,
-  LevelLayer,
   PackedAtlas,
   ProjectDocument,
+  SceneDocument,
+  SceneNode,
   SpriteAsset,
   TerrainSet,
-  TileChunk,
+  TileMapNodeData,
   TilesetAsset,
 } from "../types";
-import { chunkKey, fnv1a32 } from "../utils";
+import { findNode } from "../scene/helpers";
+import { fnv1a32 } from "../utils";
 
-export function getSelectedLevel(state: AppState): LevelDocument | null {
+export function getSelectedScene(state: AppState): SceneDocument | null {
   return (
-    state.project.levels.find((level) => level.id === state.editor.selectedLevelId) ??
-    state.project.levels[0] ??
+    state.project.scenes.find((scene) => scene.id === state.editor.selectedSceneId) ??
+    state.project.scenes[0] ??
     null
   );
 }
 
-export function getSelectedLayer(state: AppState): LevelLayer | null {
-  const level = getSelectedLevel(state);
-  if (!level) {
-    return null;
-  }
-  if (!state.editor.selectedLayerId) {
-    return null;
-  }
-  return level.layers.find((layer) => layer.id === state.editor.selectedLayerId) ?? null;
+export function getSelectedNode(state: AppState): SceneNode | null {
+  const scene = getSelectedScene(state);
+  if (!scene || !state.editor.selectedNodeId) return null;
+  return findNode(scene.root, state.editor.selectedNodeId);
+}
+
+export function getSelectedTileMapData(state: AppState): TileMapNodeData | null {
+  const node = getSelectedNode(state);
+  if (node && node.data.type === "TileMap") return node.data;
+  return null;
 }
 
 export function getSelectedTileset(state: AppState): TilesetAsset | null {
@@ -40,48 +42,35 @@ export function getSelectedTileset(state: AppState): TilesetAsset | null {
   );
 }
 
-export function getEffectiveLevelTileIds(
+export function getEffectiveTileMapTileIds(
   project: ProjectDocument,
-  level: LevelDocument | null,
+  tileMapData: TileMapNodeData | null,
 ): number[] {
-  if (!level) {
-    return [];
-  }
-  if (level.tileIds.length) {
-    return level.tileIds;
-  }
+  if (!tileMapData) return [];
+  if (tileMapData.tileIds.length) return tileMapData.tileIds;
   return project.tilesets
-    .filter((tileset) => level.tilesetIds.includes(tileset.id))
+    .filter((tileset) => tileMapData.tilesetIds.includes(tileset.id))
     .flatMap((tileset) => tileset.tileIds);
 }
 
 export function getSelectedTerrainSet(state: AppState): TerrainSet | null {
-  const level = getSelectedLevel(state);
-  const levelTileIds = new Set(getEffectiveLevelTileIds(state.project, level));
+  const tileMapData = getSelectedTileMapData(state);
+  const tileIds = new Set(getEffectiveTileMapTileIds(state.project, tileMapData));
   const selectedById = state.project.terrainSets.find(
     (terrainSet) =>
       terrainSet.id === state.editor.selectedTerrainSetId &&
       (
-        (level && terrainSet.levelId === level.id) ||
-        (!terrainSet.levelId &&
-          Object.values(terrainSet.slots).some((tileId) => levelTileIds.has(tileId)))
+        (state.editor.selectedNodeId && terrainSet.sceneNodeId === state.editor.selectedNodeId) ||
+        (!terrainSet.sceneNodeId &&
+          Object.values(terrainSet.slots).some((tileId) => tileIds.has(tileId)))
       ),
   );
   return (
     selectedById ??
-    state.project.terrainSets.find((terrainSet) => terrainSet.levelId === state.editor.selectedLevelId) ??
+    state.project.terrainSets.find((terrainSet) => terrainSet.sceneNodeId === state.editor.selectedNodeId) ??
     state.project.terrainSets.find((terrainSet) => terrainSet.tilesetId === state.editor.selectedTilesetId) ??
     null
   );
-}
-
-export function getTileChunk(
-  level: LevelDocument,
-  layerId: string,
-  chunkX: number,
-  chunkY: number,
-): TileChunk | null {
-  return level.chunks[chunkKey(layerId, chunkX, chunkY)] ?? null;
 }
 
 export function getSpriteForSlice(project: AppState["project"], sliceId: string): SpriteAsset | null {
@@ -94,9 +83,7 @@ export function getTileById(project: AppState["project"], tileId: number) {
 
 export async function buildAtlasFromProject(project: AppState["project"]): Promise<PackedAtlas | null> {
   const { imports } = await buildRuntimeSpriteCatalog(project);
-  if (!imports.length) {
-    return null;
-  }
+  if (!imports.length) return null;
 
   const spriteBySliceId = new Map(project.sprites.map((s) => [s.sliceId, s]));
   const spriteIndexById = new Map(imports.map((imp, idx) => [imp.id, idx]));
@@ -108,12 +95,7 @@ export async function buildAtlasFromProject(project: AppState["project"]): Promi
         const sprite = spriteBySliceId.get(f.sliceId);
         if (!sprite) return [];
         const spriteIndex = spriteIndexById.get(sprite.id);
-        if (spriteIndex === undefined) {
-          console.warn(
-            `[atlas] Animation "${anim.name}": sprite for slice "${f.sliceId}" is not included in the atlas — frame will be omitted from export.`,
-          );
-          return [];
-        }
+        if (spriteIndex === undefined) return [];
         return [{ spriteIndex, durationMs: f.durationMs }];
       });
       return { nameHash: anim.nameHash, loop: anim.loop, frames };
@@ -131,12 +113,7 @@ export async function buildAtlasFromProject(project: AppState["project"]): Promi
         const sprite = spriteBySliceId.get(f.sliceId);
         if (!sprite) return [];
         const spriteIndex = spriteIndexById.get(sprite.id);
-        if (spriteIndex === undefined) {
-          console.warn(
-            `[atlas] AnimatedTile "${animTile.name}": sprite for slice "${f.sliceId}" is not included in the atlas — frame will be omitted.`,
-          );
-          return [];
-        }
+        if (spriteIndex === undefined) return [];
         return [{ spriteIndex, durationMs: f.durationMs }];
       });
 

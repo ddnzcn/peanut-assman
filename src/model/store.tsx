@@ -5,23 +5,36 @@ import {
   useMemo,
   useReducer,
 } from "react";
-import { createDefaultLevel, createEmptyProject, DEFAULT_EDITOR_STATE } from "./project";
+import { createEmptyProject, DEFAULT_EDITOR_STATE } from "./project";
 import type {
   AnimatedTileAsset,
   AppState,
-  HistorySnapshot,
-  LevelDocument,
-  LevelHistoryPatch,
-  LevelLayer,
   ProjectAction,
   ProjectDocument,
+  SceneDocument,
+  SceneHistorySnapshot,
+  SceneNode,
   SpriteAnimation,
-  TileChunk,
 } from "../types";
-import { chunkKey, clamp, fnv1a32 } from "../utils";
+import { clamp, fnv1a32 } from "../utils";
+import {
+  findNode,
+  insertNode,
+  moveNode,
+  removeNode,
+  reorderNode,
+  updateNode,
+} from "../scene/helpers";
 
 const HISTORY_LIMIT = 100;
-const TRACKED_ACTIONS = new Set<ProjectAction["type"]>(["updateLevel", "replaceLevelChunks"]);
+const TRACKED_SCENE_ACTIONS = new Set<ProjectAction["type"]>([
+  "updateSceneNode",
+  "updateSceneNodeData",
+  "addChildNode",
+  "removeNode",
+  "moveNode",
+  "reorderNode",
+]);
 
 const initialState: AppState = {
   project: createEmptyProject(),
@@ -53,56 +66,34 @@ export function useProjectStore(): StoreValue {
   return context;
 }
 
-function createLevelHistorySnapshot(previousState: AppState, nextState: AppState, levelId: string): HistorySnapshot | null {
-  const previousLevel = previousState.project.levels.find((level) => level.id === levelId);
-  const nextLevel = nextState.project.levels.find((level) => level.id === levelId);
-  if (!previousLevel || !nextLevel) {
-    return null;
-  }
-  const previousPatch = buildLevelHistoryPatch(nextLevel, previousLevel);
-  const nextPatch = buildLevelHistoryPatch(previousLevel, nextLevel);
-  if (!previousPatch || !nextPatch) {
-    return null;
-  }
+function createSceneSnapshot(
+  previousScenes: SceneDocument[],
+  nextScenes: SceneDocument[],
+  sceneId: string,
+): SceneHistorySnapshot | null {
+  const prev = previousScenes.find((s) => s.id === sceneId);
+  const next = nextScenes.find((s) => s.id === sceneId);
+  if (!prev || !next || prev.root === next.root) return null;
   return {
-    levelId,
-    previousPatch,
-    nextPatch,
+    sceneId,
+    previousRoot: structuredClone(prev.root),
+    nextRoot: structuredClone(next.root),
   };
 }
 
-function createHistorySnapshot(state: AppState, action: ProjectAction, nextState: AppState): HistorySnapshot | null {
-  if (action.type === "updateLevel") {
-    return createLevelHistorySnapshot(state, nextState, action.level.id);
-  }
-  if (action.type === "replaceLevelChunks") {
-    return createLevelHistorySnapshot(state, nextState, action.levelId);
-  }
-  return null;
-}
-
-function pushHistoryEntry(state: AppState, nextState: AppState, snapshot: HistorySnapshot): AppState {
-  return {
-    ...nextState,
-    undoStack: [...state.undoStack, snapshot].slice(-HISTORY_LIMIT),
-    redoStack: [],
-  };
-}
-
-function applyHistorySnapshot(
+function applySceneSnapshot(
   state: AppState,
-  snapshot: HistorySnapshot,
+  snapshot: SceneHistorySnapshot,
   direction: "undo" | "redo",
   history: Pick<AppState, "undoStack" | "redoStack">,
 ): AppState {
+  const targetRoot = direction === "undo" ? snapshot.previousRoot : snapshot.nextRoot;
   return {
     ...state,
     project: {
       ...state.project,
-      levels: state.project.levels.map((level) =>
-        level.id === snapshot.levelId
-          ? applyLevelHistoryPatch(level, direction === "undo" ? snapshot.previousPatch : snapshot.nextPatch)
-          : level,
+      scenes: state.project.scenes.map((scene) =>
+        scene.id === snapshot.sceneId ? { ...scene, root: targetRoot } : scene,
       ),
     },
     undoStack: history.undoStack,
@@ -110,98 +101,42 @@ function applyHistorySnapshot(
   };
 }
 
-function buildLevelHistoryPatch(fromLevel: LevelDocument, toLevel: LevelDocument): LevelHistoryPatch | null {
-  const patch: LevelHistoryPatch = {};
-
-  if (fromLevel.name !== toLevel.name) patch.name = toLevel.name;
-  if (fromLevel.mapWidthTiles !== toLevel.mapWidthTiles) patch.mapWidthTiles = toLevel.mapWidthTiles;
-  if (fromLevel.mapHeightTiles !== toLevel.mapHeightTiles) patch.mapHeightTiles = toLevel.mapHeightTiles;
-  if (fromLevel.tileWidth !== toLevel.tileWidth) patch.tileWidth = toLevel.tileWidth;
-  if (fromLevel.tileHeight !== toLevel.tileHeight) patch.tileHeight = toLevel.tileHeight;
-  if (fromLevel.chunkWidthTiles !== toLevel.chunkWidthTiles) patch.chunkWidthTiles = toLevel.chunkWidthTiles;
-  if (fromLevel.chunkHeightTiles !== toLevel.chunkHeightTiles) patch.chunkHeightTiles = toLevel.chunkHeightTiles;
-  if (fromLevel.tileIds !== toLevel.tileIds) patch.tileIds = [...toLevel.tileIds];
-  if (fromLevel.tilesetIds !== toLevel.tilesetIds) patch.tilesetIds = [...toLevel.tilesetIds];
-  if (fromLevel.layers !== toLevel.layers) patch.layers = structuredClone(toLevel.layers);
-  if (fromLevel.collisions !== toLevel.collisions) patch.collisions = structuredClone(toLevel.collisions);
-  if (fromLevel.markers !== toLevel.markers) patch.markers = structuredClone(toLevel.markers);
-
-  if (fromLevel.chunks !== toLevel.chunks) {
-    const chunkKeys = new Set([...Object.keys(fromLevel.chunks), ...Object.keys(toLevel.chunks)]);
-    const chunksPatch: Record<string, TileChunk | null> = {};
-    chunkKeys.forEach((key) => {
-      if (fromLevel.chunks[key] !== toLevel.chunks[key]) {
-        chunksPatch[key] = toLevel.chunks[key] ? structuredClone(toLevel.chunks[key]) : null;
-      }
-    });
-    if (Object.keys(chunksPatch).length) {
-      patch.chunks = chunksPatch;
-    }
-  }
-
-  return Object.keys(patch).length ? patch : null;
-}
-
-function applyLevelHistoryPatch(level: LevelDocument, patch: LevelHistoryPatch): LevelDocument {
-  const nextLevel: LevelDocument = { ...level };
-
-  if ("name" in patch) nextLevel.name = patch.name!;
-  if ("mapWidthTiles" in patch) nextLevel.mapWidthTiles = patch.mapWidthTiles!;
-  if ("mapHeightTiles" in patch) nextLevel.mapHeightTiles = patch.mapHeightTiles!;
-  if ("tileWidth" in patch) nextLevel.tileWidth = patch.tileWidth!;
-  if ("tileHeight" in patch) nextLevel.tileHeight = patch.tileHeight!;
-  if ("chunkWidthTiles" in patch) nextLevel.chunkWidthTiles = patch.chunkWidthTiles!;
-  if ("chunkHeightTiles" in patch) nextLevel.chunkHeightTiles = patch.chunkHeightTiles!;
-  if ("tileIds" in patch) nextLevel.tileIds = [...patch.tileIds!];
-  if ("tilesetIds" in patch) nextLevel.tilesetIds = [...patch.tilesetIds!];
-  if ("layers" in patch) nextLevel.layers = structuredClone(patch.layers!);
-  if ("collisions" in patch) nextLevel.collisions = structuredClone(patch.collisions!);
-  if ("markers" in patch) nextLevel.markers = structuredClone(patch.markers!);
-  if ("chunks" in patch) {
-    const nextChunks = { ...level.chunks };
-    Object.entries(patch.chunks!).forEach(([key, chunk]) => {
-      if (chunk === null) {
-        delete nextChunks[key];
-      } else {
-        nextChunks[key] = structuredClone(chunk);
-      }
-    });
-    nextLevel.chunks = nextChunks;
-  }
-
-  return nextLevel;
+function updateSceneRoot(
+  scenes: SceneDocument[],
+  sceneId: string,
+  updater: (root: SceneNode) => SceneNode,
+): SceneDocument[] {
+  return scenes.map((scene) =>
+    scene.id === sceneId ? { ...scene, root: updater(scene.root) } : scene,
+  );
 }
 
 function reducer(state: AppState, action: ProjectAction): AppState {
   if (action.type === "undo") {
-    if (!state.undoStack.length) {
-      return state;
-    }
+    if (!state.undoStack.length) return state;
     const previous = state.undoStack[state.undoStack.length - 1];
-    return applyHistorySnapshot(state, previous, "undo", {
+    return applySceneSnapshot(state, previous, "undo", {
       undoStack: state.undoStack.slice(0, -1),
       redoStack: [...state.redoStack, previous].slice(-HISTORY_LIMIT),
     });
   }
 
   if (action.type === "redo") {
-    if (!state.redoStack.length) {
-      return state;
-    }
+    if (!state.redoStack.length) return state;
     const next = state.redoStack[state.redoStack.length - 1];
-    return applyHistorySnapshot(state, next, "redo", {
+    return applySceneSnapshot(state, next, "redo", {
       undoStack: [...state.undoStack, next].slice(-HISTORY_LIMIT),
       redoStack: state.redoStack.slice(0, -1),
     });
   }
 
-  if (action.type === "commitLevelStroke") {
-    const snapshot = createLevelHistorySnapshot(
-      { ...state, project: { ...state.project, levels: state.project.levels.map((l) => l.id === action.baseLevel.id ? action.baseLevel : l) } },
-      { ...state, project: { ...state.project, levels: state.project.levels.map((l) => l.id === action.currentLevel.id ? action.currentLevel : l) } },
-      action.currentLevel.id,
-    );
-    if (!snapshot) return state;
+  if (action.type === "commitSceneStroke") {
+    if (action.baseRoot === action.currentRoot) return state;
+    const snapshot: SceneHistorySnapshot = {
+      sceneId: action.sceneId,
+      previousRoot: structuredClone(action.baseRoot),
+      nextRoot: structuredClone(action.currentRoot),
+    };
     return {
       ...state,
       undoStack: [...state.undoStack, snapshot].slice(-HISTORY_LIMIT),
@@ -210,15 +145,23 @@ function reducer(state: AppState, action: ProjectAction): AppState {
   }
 
   const nextState = reducePresent(state, action);
-  if (nextState === state) {
-    return state;
-  }
-  if (TRACKED_ACTIONS.has(action.type)) {
-    const snapshot = createHistorySnapshot(state, action, nextState);
+  if (nextState === state) return state;
+
+  if (TRACKED_SCENE_ACTIONS.has(action.type) && "sceneId" in action) {
+    const snapshot = createSceneSnapshot(
+      state.project.scenes,
+      nextState.project.scenes,
+      (action as { sceneId: string }).sceneId,
+    );
     if (snapshot) {
-      return pushHistoryEntry(state, nextState, snapshot);
+      return {
+        ...nextState,
+        undoStack: [...state.undoStack, snapshot].slice(-HISTORY_LIMIT),
+        redoStack: [],
+      };
     }
   }
+
   return nextState;
 }
 
@@ -255,14 +198,6 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
       };
     case "setSelectedTerrainSet":
       return { ...state, editor: { ...state.editor, selectedTerrainSetId: action.terrainSetId } };
-    case "setSelectedLevel":
-      return { ...state, editor: { ...state.editor, selectedLevelId: action.levelId } };
-    case "setSelectedLayer":
-      return { ...state, editor: { ...state.editor, selectedLayerId: action.layerId } };
-    case "setSelectedCollision":
-      return { ...state, editor: { ...state.editor, selectedCollisionId: action.collisionId } };
-    case "setSelectedMarker":
-      return { ...state, editor: { ...state.editor, selectedMarkerId: action.markerId } };
     case "setLevelTool":
       return { ...state, editor: { ...state.editor, levelTool: action.tool } };
     case "setSlicerZoom":
@@ -298,25 +233,15 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
         editor: { ...state.editor, cullingOverlayVisible: !state.editor.cullingOverlayVisible },
       };
     case "replaceProject": {
-      const selectedLevelId = action.project.levels[0]?.id ?? null;
-      const selectedLayerId = action.project.levels[0]?.layers[0]?.id ?? null;
-      const project: ProjectDocument = {
-        ...action.project,
-        spriteAnimations: action.project.spriteAnimations ?? [],
-        animatedTiles: action.project.animatedTiles ?? [],
-        idCounters: {
-          ...action.project.idCounters,
-          spriteAnimation: action.project.idCounters.spriteAnimation ?? 1,
-          animatedTile: action.project.idCounters.animatedTile ?? 1,
-        },
-      };
+      const project = normalizeProject(action.project);
+      const selectedSceneId = project.scenes[0]?.id ?? null;
       return {
         ...state,
         project,
         editor: {
           ...state.editor,
-          selectedLevelId,
-          selectedLayerId,
+          selectedSceneId,
+          selectedNodeId: null,
           selectedTilesetId: project.tilesets[0]?.id ?? null,
           selectedTerrainSetId: project.terrainSets[0]?.id ?? null,
           selectedSourceImageId: project.sourceImages[0]?.id ?? null,
@@ -408,9 +333,7 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
       const newSprites = action.sliceIds.flatMap((sliceId, index) => {
         const existing = existingBySliceId.get(sliceId);
         const slice = sliceById.get(sliceId);
-        if (existing || !slice) {
-          return [];
-        }
+        if (existing || !slice) return [];
         const name = `${slice.name}.png`;
         return [{
           id: state.project.idCounters.sprite + index,
@@ -432,13 +355,12 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
         },
       };
     }
-    case "addLevelTiles": {
-      const levelIndex = state.project.levels.findIndex((entry) => entry.id === action.levelId);
-      if (levelIndex < 0) {
-        return state;
-      }
+    case "addSceneTiles": {
+      const scene = state.project.scenes.find((s) => s.id === action.sceneId);
+      if (!scene) return state;
+      const node = findNode(scene.root, action.nodeId);
+      if (!node || node.data.type !== "TileMap") return state;
 
-      const level = state.project.levels[levelIndex];
       const sliceById = new Map(state.project.slices.map((slice) => [slice.id, slice]));
       const spriteBySliceId = new Map(state.project.sprites.map((sprite) => [sprite.sliceId, sprite]));
       const tileBySliceId = new Map(state.project.tiles.map((tile) => [tile.sliceId, tile]));
@@ -454,20 +376,12 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
 
       for (const sliceId of action.sliceIds) {
         const slice = sliceById.get(sliceId);
-        if (!slice || (slice.kind !== "tile" && slice.kind !== "both")) {
-          continue;
-        }
+        if (!slice || (slice.kind !== "tile" && slice.kind !== "both")) continue;
 
         let sprite = spriteBySliceId.get(sliceId);
         if (!sprite) {
           const name = `${slice.name}.png`;
-          sprite = {
-            id: nextSpriteId,
-            sliceId,
-            name,
-            nameHash: fnv1a32(name),
-            includeInAtlas: true,
-          };
+          sprite = { id: nextSpriteId, sliceId, name, nameHash: fnv1a32(name), includeInAtlas: true };
           nextSpriteId += 1;
           newSprites.push(sprite);
           spriteBySliceId.set(sliceId, sprite);
@@ -475,12 +389,7 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
 
         let tile = tileBySliceId.get(sliceId);
         if (!tile) {
-          tile = {
-            tileId: nextTileId,
-            sliceId,
-            spriteId: sprite.id,
-            name: slice.name,
-          };
+          tile = { tileId: nextTileId, sliceId, spriteId: sprite.id, name: slice.name };
           nextTileId += 1;
           newTiles.push(tile);
           tileBySliceId.set(sliceId, tile);
@@ -489,15 +398,16 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
         addedTileIds.push(tile.tileId);
       }
 
-      if (!addedTileIds.length && !newSprites.length && !newTiles.length) {
-        return state;
-      }
+      if (!addedTileIds.length && !newSprites.length && !newTiles.length) return state;
 
-      const nextLevels = [...state.project.levels];
-      nextLevels[levelIndex] = {
-        ...level,
-        tileIds: [...new Set([...level.tileIds, ...addedTileIds])],
-      };
+      const tileMapData = node.data;
+      const nextTileIds = [...new Set([...tileMapData.tileIds, ...addedTileIds])];
+      const nextScenes = updateSceneRoot(state.project.scenes, action.sceneId, (root) =>
+        updateNode(root, action.nodeId, (n) => ({
+          ...n,
+          data: { ...tileMapData, tileIds: nextTileIds },
+        })),
+      );
 
       return {
         ...state,
@@ -505,12 +415,8 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
           ...state.project,
           sprites: [...updatedSprites, ...newSprites],
           tiles: [...state.project.tiles, ...newTiles],
-          levels: nextLevels,
-          idCounters: {
-            ...state.project.idCounters,
-            sprite: nextSpriteId,
-            tile: nextTileId,
-          },
+          scenes: nextScenes,
+          idCounters: { ...state.project.idCounters, sprite: nextSpriteId, tile: nextTileId },
         },
       };
     }
@@ -539,10 +445,21 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
         ...state.project.tilesets.filter((tileset) => tileset.id !== action.tileset.id),
         action.tileset,
       ].sort((left, right) => left.id - right.id);
-      const level = state.project.levels[0] ?? createDefaultLevel();
-      const updatedLevel: LevelDocument = level.tilesetIds.includes(action.tileset.id)
-        ? level
-        : { ...level, tilesetIds: [...level.tilesetIds, action.tileset.id] };
+
+      const scene = state.project.scenes[0];
+      let nextScenes = state.project.scenes;
+      if (scene) {
+        const tileMapNode = findFirstTileMap(scene.root);
+        if (tileMapNode && tileMapNode.data.type === "TileMap" && !tileMapNode.data.tilesetIds.includes(action.tileset.id)) {
+          nextScenes = updateSceneRoot(state.project.scenes, scene.id, (root) =>
+            updateNode(root, tileMapNode.id, (n) => ({
+              ...n,
+              data: { ...n.data, tilesetIds: [...(n.data as typeof tileMapNode.data).tilesetIds, action.tileset.id] },
+            })),
+          );
+        }
+      }
+
       return {
         ...state,
         project: {
@@ -550,20 +467,14 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
           tilesets: nextTilesets,
           sprites: [...state.project.sprites, ...action.sprites.filter((sprite) => !state.project.sprites.some((current) => current.id === sprite.id))],
           tiles: [...state.project.tiles, ...action.tiles.filter((tile) => !state.project.tiles.some((current) => current.tileId === tile.tileId))],
-          levels: [updatedLevel, ...state.project.levels.slice(1)],
+          scenes: nextScenes,
           idCounters: {
             ...state.project.idCounters,
             tileset: Math.max(state.project.idCounters.tileset, action.tileset.id + 1),
             sprite:
-              Math.max(
-                state.project.idCounters.sprite,
-                ...action.sprites.map((sprite) => sprite.id + 1),
-              ) || state.project.idCounters.sprite,
+              Math.max(state.project.idCounters.sprite, ...action.sprites.map((sprite) => sprite.id + 1)) || state.project.idCounters.sprite,
             tile:
-              Math.max(
-                state.project.idCounters.tile,
-                ...action.tiles.map((tile) => tile.tileId + 1),
-              ) || state.project.idCounters.tile,
+              Math.max(state.project.idCounters.tile, ...action.tiles.map((tile) => tile.tileId + 1)) || state.project.idCounters.tile,
           },
         },
         editor: { ...state.editor, selectedTilesetId: action.tileset.id, workspace: "level" },
@@ -584,10 +495,7 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
             terrainSet: Math.max(state.project.idCounters.terrainSet, action.terrainSet.id + 1),
           },
         },
-        editor: {
-          ...state.editor,
-          selectedTerrainSetId: action.terrainSet.id,
-        },
+        editor: { ...state.editor, selectedTerrainSetId: action.terrainSet.id },
       };
     }
     case "removeTerrainSet": {
@@ -641,12 +549,7 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
     case "setSelectedSpriteAnimation":
       return {
         ...state,
-        editor: {
-          ...state.editor,
-          selectedSpriteAnimationId: action.animationId,
-          animCurrentFrame: 0,
-          animIsPlaying: false,
-        },
+        editor: { ...state.editor, selectedSpriteAnimationId: action.animationId, animCurrentFrame: 0, animIsPlaying: false },
       };
     case "upsertAnimatedTile": {
       const existing = state.project.animatedTiles.find((a) => a.id === action.animatedTile.id);
@@ -661,7 +564,6 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
           idCounters: {
             ...state.project.idCounters,
             animatedTile: Math.max(state.project.idCounters.animatedTile, action.animatedTile.id + 1),
-            // If this is a NEW animated tile, reserve its baseTileId so it doesn't collide with future tiles
             tile: existing ? state.project.idCounters.tile : Math.max(state.project.idCounters.tile, action.animatedTile.baseTileId + 1),
           },
         },
@@ -702,142 +604,8 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
       const sprites = [...state.project.sprites];
       const [moved] = sprites.splice(action.fromIndex, 1);
       sprites.splice(action.toIndex, 0, moved);
-      return {
-        ...state,
-        project: {
-          ...state.project,
-          sprites,
-        },
-      };
+      return { ...state, project: { ...state.project, sprites } };
     }
-    case "addLevel":
-      return {
-        ...state,
-        project: {
-          ...state.project,
-          levels: [...state.project.levels, action.level],
-          idCounters: {
-            ...state.project.idCounters,
-            level: Math.max(state.project.idCounters.level, Number(action.level.id.split("-").pop() ?? state.project.idCounters.level) + 1),
-            layer: Math.max(
-              state.project.idCounters.layer,
-              ...action.level.layers.map((layer) => Number(layer.id.split("-").pop() ?? state.project.idCounters.layer) + 1),
-            ),
-          },
-        },
-        editor: {
-          ...state.editor,
-          selectedLevelId: action.level.id,
-          selectedLayerId: action.level.layers[0]?.id ?? null,
-        },
-      };
-    case "removeLevel": {
-      if (state.project.levels.length <= 1) {
-        return state;
-      }
-      const levels = state.project.levels.filter((level) => level.id !== action.levelId);
-      const selectedLevel = levels.find((level) => level.id === state.editor.selectedLevelId) ?? levels[0] ?? null;
-      return {
-        ...state,
-        project: { ...state.project, levels },
-        editor: {
-          ...state.editor,
-          selectedLevelId: selectedLevel?.id ?? null,
-          selectedLayerId: selectedLevel?.layers[0]?.id ?? null,
-        },
-      };
-    }
-    case "addLayer":
-      return {
-        ...state,
-        project: {
-          ...state.project,
-          levels: state.project.levels.map((level) =>
-            level.id === action.levelId ? { ...level, layers: [...level.layers, action.layer] } : level,
-          ),
-          idCounters: {
-            ...state.project.idCounters,
-            layer: Math.max(state.project.idCounters.layer, Number(action.layer.id.split("-").pop() ?? state.project.idCounters.layer) + 1),
-          },
-        },
-        editor: { ...state.editor, selectedLayerId: action.layer.id },
-      };
-    case "reorderLayer": {
-      const level = state.project.levels.find((entry) => entry.id === action.levelId);
-      if (!level) {
-        return state;
-      }
-      const index = level.layers.findIndex((entry) => entry.id === action.layerId);
-      if (index < 0) {
-        return state;
-      }
-      const nextIndex =
-        typeof action.toIndex === "number"
-          ? action.toIndex
-          : action.direction === "up"
-            ? index - 1
-            : index + 1;
-      if (nextIndex < 0 || nextIndex >= level.layers.length) {
-        return state;
-      }
-      const layers = [...level.layers];
-      const [moved] = layers.splice(index, 1);
-      layers.splice(nextIndex, 0, moved);
-      return {
-        ...state,
-        project: {
-          ...state.project,
-          levels: state.project.levels.map((entry) =>
-            entry.id === action.levelId ? { ...entry, layers } : entry,
-          ),
-        },
-      };
-    }
-    case "removeLayer": {
-      const level = state.project.levels.find((entry) => entry.id === action.levelId);
-      if (!level || level.layers.length <= 1) {
-        return state;
-      }
-      const layers = level.layers.filter((entry) => entry.id !== action.layerId);
-      const chunks = Object.fromEntries(
-        Object.entries(level.chunks).filter(([key]) => !key.startsWith(`${action.layerId}:`)),
-      );
-      const collisions = level.collisions.filter((entry) => entry.layerId !== action.layerId);
-      const markers = level.markers.filter((entry) => entry.layerId !== action.layerId);
-      const levels = state.project.levels.map((entry) =>
-        entry.id === action.levelId ? { ...entry, layers, chunks, collisions, markers } : entry,
-      );
-      const selectedLayer = layers.find((entry) => entry.id === state.editor.selectedLayerId) ?? layers[0] ?? null;
-      return {
-        ...state,
-        project: { ...state.project, levels },
-        editor: {
-          ...state.editor,
-          selectedLayerId: selectedLayer?.id ?? null,
-          selectedCollisionId: null,
-          selectedMarkerId: null,
-        },
-      };
-    }
-    case "updateLevel":
-    case "updateLevelSilent":
-      return {
-        ...state,
-        project: {
-          ...state.project,
-          levels: state.project.levels.map((level) => (level.id === action.level.id ? action.level : level)),
-        },
-      };
-    case "replaceLevelChunks":
-      return {
-        ...state,
-        project: {
-          ...state.project,
-          levels: state.project.levels.map((level) =>
-            level.id === action.levelId ? { ...level, chunks: action.chunks } : level,
-          ),
-        },
-      };
     case "setAtlasHoveredSprite":
       return { ...state, editor: { ...state.editor, atlasHoveredSpriteId: action.spriteId } };
     case "saveBrush": {
@@ -868,24 +636,132 @@ function reducePresent(state: AppState, action: ProjectAction): AppState {
     }
     case "setActiveBrush":
       return { ...state, editor: { ...state.editor, activeBrushId: action.brushId } };
+
+    // Scene graph actions
+    case "selectScene":
+      return { ...state, editor: { ...state.editor, selectedSceneId: action.sceneId, selectedNodeId: null } };
+    case "selectNode":
+      return { ...state, editor: { ...state.editor, selectedNodeId: action.nodeId } };
+    case "addScene":
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          scenes: [...state.project.scenes, action.scene],
+          idCounters: {
+            ...state.project.idCounters,
+            scene: state.project.idCounters.scene + 1,
+          },
+        },
+        editor: { ...state.editor, selectedSceneId: action.scene.id, selectedNodeId: null },
+      };
+    case "removeScene": {
+      if (state.project.scenes.length <= 1) return state;
+      const scenes = state.project.scenes.filter((s) => s.id !== action.sceneId);
+      return {
+        ...state,
+        project: { ...state.project, scenes },
+        editor: {
+          ...state.editor,
+          selectedSceneId: state.editor.selectedSceneId === action.sceneId ? (scenes[0]?.id ?? null) : state.editor.selectedSceneId,
+          selectedNodeId: state.editor.selectedSceneId === action.sceneId ? null : state.editor.selectedNodeId,
+        },
+      };
+    }
+    case "addChildNode":
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          scenes: updateSceneRoot(state.project.scenes, action.sceneId, (root) =>
+            insertNode(root, action.parentId, action.node, action.index),
+          ),
+          idCounters: { ...state.project.idCounters, node: state.project.idCounters.node + 1 },
+        },
+        editor: { ...state.editor, selectedNodeId: action.node.id },
+      };
+    case "removeNode":
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          scenes: updateSceneRoot(state.project.scenes, action.sceneId, (root) =>
+            removeNode(root, action.nodeId),
+          ),
+        },
+        editor: {
+          ...state.editor,
+          selectedNodeId: state.editor.selectedNodeId === action.nodeId ? null : state.editor.selectedNodeId,
+        },
+      };
+    case "moveNode":
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          scenes: updateSceneRoot(state.project.scenes, action.sceneId, (root) =>
+            moveNode(root, action.nodeId, action.newParentId, action.index),
+          ),
+        },
+      };
+    case "reorderNode":
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          scenes: updateSceneRoot(state.project.scenes, action.sceneId, (root) =>
+            reorderNode(root, action.parentId, action.nodeId, action.toIndex),
+          ),
+        },
+      };
+    case "updateSceneNode":
+    case "updateSceneNodeSilent":
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          scenes: updateSceneRoot(state.project.scenes, action.sceneId, (root) =>
+            updateNode(root, action.nodeId, (node) => ({ ...node, ...action.patch, id: node.id })),
+          ),
+        },
+      };
+    case "updateSceneNodeData":
+    case "updateSceneNodeDataSilent":
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          scenes: updateSceneRoot(state.project.scenes, action.sceneId, (root) =>
+            updateNode(root, action.nodeId, (node) => ({ ...node, data: action.data })),
+          ),
+        },
+      };
     default:
       return state;
   }
 }
 
-export function upsertChunk(
-  level: LevelDocument,
-  layer: LevelLayer,
-  chunkX: number,
-  chunkY: number,
-  chunk: TileChunk | null,
-): LevelDocument {
-  const key = chunkKey(layer.id, chunkX, chunkY);
-  const nextChunks = { ...level.chunks };
-  if (chunk) {
-    nextChunks[key] = chunk;
-  } else {
-    delete nextChunks[key];
+function findFirstTileMap(root: SceneNode): SceneNode | null {
+  if (root.data.type === "TileMap") return root;
+  for (const child of root.children) {
+    const found = findFirstTileMap(child);
+    if (found) return found;
   }
-  return { ...level, chunks: nextChunks };
+  return null;
+}
+
+function normalizeProject(project: ProjectDocument): ProjectDocument {
+  return {
+    ...project,
+    scenes: project.scenes ?? [],
+    spriteAnimations: project.spriteAnimations ?? [],
+    animatedTiles: project.animatedTiles ?? [],
+    idCounters: {
+      ...project.idCounters,
+      scene: project.idCounters.scene ?? 2,
+      node: project.idCounters.node ?? 10,
+      spriteAnimation: project.idCounters.spriteAnimation ?? 1,
+      animatedTile: project.idCounters.animatedTile ?? 1,
+    },
+  };
 }

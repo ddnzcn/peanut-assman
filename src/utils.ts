@@ -124,6 +124,10 @@ export function chunkKey(layerId: string, chunkX: number, chunkY: number): strin
   return `${layerId}:${chunkX}:${chunkY}`;
 }
 
+export function tileMapChunkKey(chunkX: number, chunkY: number): string {
+  return `${chunkX}:${chunkY}`;
+}
+
 export function mod(value: number, divisor: number): number {
   return ((value % divisor) + divisor) % divisor;
 }

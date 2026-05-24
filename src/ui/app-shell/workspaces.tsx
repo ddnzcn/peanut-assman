@@ -326,10 +326,10 @@ export function LevelWorkspace(props: {
                   pointerEvents: "auto",
                   zIndex: 10,
                 }}>
-                  <button className="v2-tool-btn" title="Cut (Ctrl+X)" onClick={props.onCut} style={{ fontSize: 11, padding: "2px 7px" }}>Cut</button>
-                  <button className="v2-tool-btn" title="Copy (Ctrl+C)" onClick={props.onCopy} style={{ fontSize: 11, padding: "2px 7px" }}>Copy</button>
+                  <button className="pn-tool-btn" title="Cut (Ctrl+X)" onClick={props.onCut} style={{ fontSize: 11, padding: "2px 7px" }}>Cut</button>
+                  <button className="pn-tool-btn" title="Copy (Ctrl+C)" onClick={props.onCopy} style={{ fontSize: 11, padding: "2px 7px" }}>Copy</button>
                   {props.hasClipboard && (
-                    <button className="v2-tool-btn" title="Paste (Ctrl+V)" onClick={props.onPaste} style={{ fontSize: 11, padding: "2px 7px" }}>Paste</button>
+                    <button className="pn-tool-btn" title="Paste (Ctrl+V)" onClick={props.onPaste} style={{ fontSize: 11, padding: "2px 7px" }}>Paste</button>
                   )}
                 </div>
               )}
