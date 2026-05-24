@@ -78,14 +78,20 @@ export function renderLevelCanvas(
   onInvalidate?: () => void,
   skipTiles = false,
 ) {
-  if (!canvas || !tileMap) return;
+  if (!canvas) return;
   const context = canvas.getContext("2d");
   if (!context) return;
 
-  const tileW = tileMap.tileWidth * zoom;
-  const tileH = tileMap.tileHeight * zoom;
   context.imageSmoothingEnabled = false;
   context.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!tileMap) {
+    drawViewportGrid(context, canvas.width, canvas.height, 16 * zoom, zoom);
+    return;
+  }
+
+  const tileW = tileMap.tileWidth * zoom;
+  const tileH = tileMap.tileHeight * zoom;
   if (!skipTiles) {
     context.fillStyle = "#12171c";
     context.fillRect(0, 0, canvas.width, canvas.height);
@@ -206,6 +212,56 @@ export function renderLevelCanvas(
     context.moveTo(0, y * tileH);
     context.lineTo(canvas.width, y * tileH);
   }
+  context.stroke();
+
+  // TileMap boundary outline
+  const tmW = tileMap.mapWidthTiles * tileW;
+  const tmH = tileMap.mapHeightTiles * tileH;
+  context.strokeStyle = "rgba(240, 197, 123, 0.5)";
+  context.lineWidth = 2;
+  context.strokeRect(0, 0, tmW, tmH);
+}
+
+function drawViewportGrid(context: CanvasRenderingContext2D, w: number, h: number, cellSize: number, _zoom: number) {
+  context.fillStyle = "#0e1318";
+  context.fillRect(0, 0, w, h);
+
+  context.strokeStyle = "rgba(255,255,255,0.04)";
+  context.lineWidth = 1;
+  context.beginPath();
+  for (let x = 0; x <= w; x += cellSize) {
+    context.moveTo(x, 0);
+    context.lineTo(x, h);
+  }
+  for (let y = 0; y <= h; y += cellSize) {
+    context.moveTo(0, y);
+    context.lineTo(w, y);
+  }
+  context.stroke();
+
+  // Major grid every 4 cells
+  const majorSize = cellSize * 4;
+  context.strokeStyle = "rgba(255,255,255,0.08)";
+  context.lineWidth = 1;
+  context.beginPath();
+  for (let x = 0; x <= w; x += majorSize) {
+    context.moveTo(x, 0);
+    context.lineTo(x, h);
+  }
+  for (let y = 0; y <= h; y += majorSize) {
+    context.moveTo(0, y);
+    context.lineTo(w, y);
+  }
+  context.stroke();
+
+  // Origin crosshair
+  context.strokeStyle = "rgba(255,255,255,0.15)";
+  context.lineWidth = 1;
+  context.beginPath();
+  context.moveTo(w / 2, 0);
+  context.lineTo(w / 2, h);
+  context.moveTo(0, h / 2);
+  context.lineTo(w, h / 2);
   context.stroke();
 }
 

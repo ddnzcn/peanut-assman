@@ -425,6 +425,40 @@
   height: 100%;
 }
 
+/* ---- Scene List ---- */
+.scene-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0.25rem;
+  flex-shrink: 0;
+}
+
+.scene-list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.76rem;
+  cursor: pointer;
+  border-radius: 0.3rem;
+  user-select: none;
+  transition: background 0.08s;
+}
+
+.scene-list-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.scene-list-item.active {
+  background: rgba(135, 197, 255, 0.12);
+  color: var(--accent);
+}
+
+.scene-list-item:hover .scene-tree-action-btn {
+  opacity: 1 !important;
+}
+
 /* ---- Scene Tree ---- */
 .scene-tree {
   display: flex;

@@ -572,6 +572,7 @@ export function AppShell() {
             selectedSceneId={state.editor.selectedSceneId}
             selectedNodeId={state.editor.selectedNodeId}
             nodeIdCounter={state.project.idCounters.node}
+            sceneIdCounter={state.project.idCounters.scene}
             dispatch={dispatch}
           />
         </aside>

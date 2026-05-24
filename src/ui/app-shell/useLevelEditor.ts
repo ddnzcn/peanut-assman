@@ -80,7 +80,8 @@ export function useLevelEditor({
 
   // Static canvas render
   useEffect(() => {
-    if ((state.project.animatedTiles?.length ?? 0) > 0 && state.editor.workspace === "level") return;
+    if (state.editor.workspace !== "level") return;
+    if ((state.project.animatedTiles?.length ?? 0) > 0) return;
     let cancelled = false;
     const redraw = () => {
       if (cancelled) return;

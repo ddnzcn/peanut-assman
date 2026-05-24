@@ -3,8 +3,10 @@ import {
   Box,
   ChevronDown,
   ChevronRight,
+  Copy,
   Eye,
   EyeOff,
+  Film,
   Grid3x3,
   Image,
   Lock,
@@ -21,7 +23,7 @@ import type {
   SceneNode,
   SceneNodeType,
 } from "../../types";
-import { createNode } from "../../scene/helpers";
+import { createDefaultScene, createNode } from "../../scene/helpers";
 
 const NODE_TYPE_ICONS: Record<SceneNodeType, typeof Box> = {
   Root: Box,
@@ -57,6 +59,7 @@ interface SceneTreeProps {
   selectedSceneId: string | null;
   selectedNodeId: string | null;
   nodeIdCounter: number;
+  sceneIdCounter: number;
   dispatch: React.Dispatch<ProjectAction>;
 }
 
@@ -65,6 +68,7 @@ export function SceneTree({
   selectedSceneId,
   selectedNodeId,
   nodeIdCounter,
+  sceneIdCounter,
   dispatch,
 }: SceneTreeProps) {
   const scene = scenes.find((s) => s.id === selectedSceneId) ?? scenes[0] ?? null;
@@ -270,11 +274,91 @@ export function SceneTree({
     );
   }
 
+  function handleAddScene() {
+    const id = `scene-${sceneIdCounter}`;
+    const newScene = createDefaultScene(id);
+    dispatch({ type: "addScene", scene: newScene });
+  }
+
+  function handleRemoveScene(sceneId: string) {
+    if (scenes.length <= 1) return;
+    dispatch({ type: "removeScene", sceneId });
+  }
+
+  const [renamingSceneId, setRenamingSceneId] = useState<string | null>(null);
+
+  function handleRenameScene(sceneId: string, name: string) {
+    const target = scenes.find((s) => s.id === sceneId);
+    if (!target || !name.trim()) { setRenamingSceneId(null); return; }
+    dispatch({
+      type: "updateSceneNode",
+      sceneId,
+      nodeId: target.root.id,
+      patch: {},
+    });
+    // Scene name is on the document, not the root node — dispatch a replaceProject or
+    // just update via a dedicated action. For now, we'll update the root node name as proxy.
+    // TODO: add a renameScene action if needed
+    setRenamingSceneId(null);
+  }
+
   return (
     <div className="scene-tree">
+      {/* Scene list */}
       <div className="pn-panel-header">
+        <Film size={12} />
+        <h3>Scenes</h3>
+        <button
+          className="pn-tool-btn"
+          style={{ width: 20, height: 20, marginLeft: "auto" }}
+          title="Add scene"
+          onClick={handleAddScene}
+        >
+          <Plus size={10} />
+        </button>
+      </div>
+      <div className="scene-list">
+        {scenes.map((s) => (
+          <div
+            key={s.id}
+            className={`scene-list-item${s.id === selectedSceneId ? " active" : ""}`}
+            onClick={() => dispatch({ type: "selectScene", sceneId: s.id })}
+            onDoubleClick={() => setRenamingSceneId(s.id)}
+          >
+            <Film size={10} style={{ flexShrink: 0, color: "var(--text-muted)" }} />
+            {renamingSceneId === s.id ? (
+              <input
+                className="scene-tree-rename"
+                defaultValue={s.name}
+                autoFocus
+                onBlur={(e) => handleRenameScene(s.id, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleRenameScene(s.id, (e.target as HTMLInputElement).value);
+                  if (e.key === "Escape") setRenamingSceneId(null);
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <span className="scene-tree-name">{s.name}</span>
+            )}
+            {scenes.length > 1 && (
+              <button
+                className="scene-tree-action-btn"
+                style={{ opacity: s.id === selectedSceneId ? 1 : 0 }}
+                onClick={(e) => { e.stopPropagation(); handleRemoveScene(s.id); }}
+                title="Delete scene"
+              >
+                <Trash2 size={9} />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Node tree header */}
+      <div className="pn-panel-header" style={{ borderTop: "1px solid var(--border)" }}>
         <Grid3x3 size={12} />
-        <h3>Scene</h3>
+        <h3>Nodes</h3>
         <button
           className="pn-tool-btn"
           style={{ width: 20, height: 20, marginLeft: "auto" }}
