@@ -3,6 +3,7 @@ import { buildAnimatedTileLookup, resolveAnimatedTileSliceId } from "../../anima
 import { getTileAt } from "../../level/editor";
 import { calculateBlob47Mask, getTerrainSetMarkerTileId } from "../../terrain";
 import { collectTileMapInstances } from "../../scene/helpers";
+import { tileToScreen } from "./canvas";
 
 const VERT_SRC = `
 attribute vec2 a_pos;
@@ -171,8 +172,9 @@ export function renderTilesWebGL(
         const localY = Math.floor(i / tileMap.chunkWidthTiles);
         const x = chunk.chunkX * tileMap.chunkWidthTiles + localX;
         const y = chunk.chunkY * tileMap.chunkHeightTiles + localY;
-        const px = ox + x * tileW;
-        const py = oy + y * tileH;
+        const tileScreen = tileToScreen(x, y, tileMap, zoom);
+        const px = ox + tileScreen.x;
+        const py = oy + tileScreen.y;
 
         const setId = terrainTileToSetId.get(cell.tileId);
         const terrainSet = setId !== undefined ? terrainSetsMap.get(setId) : undefined;

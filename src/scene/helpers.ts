@@ -285,8 +285,20 @@ export function computeSceneBounds(root: SceneNode): { width: number; height: nu
   let maxH = 768;
   const instances = collectTileMapInstances(root);
   for (const inst of instances) {
-    const right = inst.worldX + inst.data.mapWidthTiles * inst.data.tileWidth;
-    const bottom = inst.worldY + inst.data.mapHeightTiles * inst.data.tileHeight;
+    const tm = inst.data;
+    let tmW: number, tmH: number;
+    if (tm.projection === "isometric-diamond") {
+      tmW = (tm.mapWidthTiles + tm.mapHeightTiles) * (tm.tileWidth / 2);
+      tmH = (tm.mapWidthTiles + tm.mapHeightTiles) * (tm.tileHeight / 2);
+    } else if (tm.projection === "isometric-staggered") {
+      tmW = tm.mapWidthTiles * tm.tileWidth + tm.tileWidth / 2;
+      tmH = (tm.mapHeightTiles + 1) * (tm.tileHeight / 2);
+    } else {
+      tmW = tm.mapWidthTiles * tm.tileWidth;
+      tmH = tm.mapHeightTiles * tm.tileHeight;
+    }
+    const right = inst.worldX + tmW;
+    const bottom = inst.worldY + tmH;
     if (right > maxW) maxW = right;
     if (bottom > maxH) maxH = bottom;
   }

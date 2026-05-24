@@ -29,10 +29,11 @@ export function getCanvasTile(
 ) {
   if (!canvas) return null;
   const bounds = canvas.getBoundingClientRect();
-  const x = Math.floor((event.clientX - bounds.left - offsetX * zoom) / (tileMap.tileWidth * zoom));
-  const y = Math.floor((event.clientY - bounds.top - offsetY * zoom) / (tileMap.tileHeight * zoom));
-  if (x < 0 || y < 0 || x >= tileMap.mapWidthTiles || y >= tileMap.mapHeightTiles) return null;
-  return { x, y };
+  const px = event.clientX - bounds.left - offsetX * zoom;
+  const py = event.clientY - bounds.top - offsetY * zoom;
+  const tile = screenToTile(px, py, tileMap, zoom);
+  if (tile.x < 0 || tile.y < 0 || tile.x >= tileMap.mapWidthTiles || tile.y >= tileMap.mapHeightTiles) return null;
+  return tile;
 }
 
 export function getCanvasPixel(
@@ -54,6 +55,73 @@ export function rectStyle(rect: SliceRect, zoom: number) {
     width: rect.width * zoom,
     height: rect.height * zoom,
   };
+}
+
+export function tileToScreen(
+  tileX: number,
+  tileY: number,
+  tileMap: TileMapNodeData,
+  zoom: number,
+): { x: number; y: number } {
+  const tw = tileMap.tileWidth * zoom;
+  const th = tileMap.tileHeight * zoom;
+  if (tileMap.projection === "isometric-diamond") {
+    return {
+      x: (tileX - tileY) * (tw / 2) + (tileMap.mapHeightTiles * tw / 2),
+      y: (tileX + tileY) * (th / 2),
+    };
+  }
+  if (tileMap.projection === "isometric-staggered") {
+    return {
+      x: tileX * tw + (tileY & 1) * (tw / 2),
+      y: tileY * (th / 2),
+    };
+  }
+  return { x: tileX * tw, y: tileY * th };
+}
+
+export function screenToTile(
+  px: number,
+  py: number,
+  tileMap: TileMapNodeData,
+  zoom: number,
+): { x: number; y: number } {
+  const tw = tileMap.tileWidth * zoom;
+  const th = tileMap.tileHeight * zoom;
+  if (tileMap.projection === "isometric-diamond") {
+    const adjusted = px - (tileMap.mapHeightTiles * tw / 2);
+    const halfW = tw / 2;
+    const halfH = th / 2;
+    return {
+      x: Math.floor((adjusted / halfW + py / halfH) / 2),
+      y: Math.floor((py / halfH - adjusted / halfW) / 2),
+    };
+  }
+  if (tileMap.projection === "isometric-staggered") {
+    const roughY = Math.floor(py / (th / 2));
+    const oddRow = roughY & 1;
+    const roughX = Math.floor((px - oddRow * (tw / 2)) / tw);
+    return { x: roughX, y: roughY };
+  }
+  return { x: Math.floor(px / tw), y: Math.floor(py / th) };
+}
+
+export function getTileMapPixelBounds(tileMap: TileMapNodeData, zoom: number): { w: number; h: number } {
+  const tw = tileMap.tileWidth * zoom;
+  const th = tileMap.tileHeight * zoom;
+  if (tileMap.projection === "isometric-diamond") {
+    return {
+      w: (tileMap.mapWidthTiles + tileMap.mapHeightTiles) * (tw / 2),
+      h: (tileMap.mapWidthTiles + tileMap.mapHeightTiles) * (th / 2),
+    };
+  }
+  if (tileMap.projection === "isometric-staggered") {
+    return {
+      w: tileMap.mapWidthTiles * tw + tw / 2,
+      h: (tileMap.mapHeightTiles + 1) * (th / 2),
+    };
+  }
+  return { w: tileMap.mapWidthTiles * tw, h: tileMap.mapHeightTiles * th };
 }
 
 export function normalizeRect(x0: number, y0: number, x1: number, y1: number): SliceRect {
@@ -106,9 +174,11 @@ export function renderLevelCanvas(
     const tileW = tileMap.tileWidth * zoom;
     const tileH = tileMap.tileHeight * zoom;
 
+    const tmBounds = getTileMapPixelBounds(tileMap, zoom);
+
     if (!skipTiles) {
       context.fillStyle = "rgba(18,23,28,0.85)";
-      context.fillRect(ox, oy, tileMap.mapWidthTiles * tileW, tileMap.mapHeightTiles * tileH);
+      context.fillRect(ox, oy, tmBounds.w, tmBounds.h);
 
       for (const chunk of Object.values(tileMap.chunks) as TileMapChunk[]) {
         for (let i = 0; i < chunk.tiles.length; i++) {
@@ -119,8 +189,9 @@ export function renderLevelCanvas(
           const localY = Math.floor(i / tileMap.chunkWidthTiles);
           const x = chunk.chunkX * tileMap.chunkWidthTiles + localX;
           const y = chunk.chunkY * tileMap.chunkHeightTiles + localY;
-          const px = ox + x * tileW;
-          const py = oy + y * tileH;
+          const tileScreen = tileToScreen(x, y, tileMap, zoom);
+          const px = ox + tileScreen.x;
+          const py = oy + tileScreen.y;
 
           const animSliceId = animTimeMs !== undefined
             ? resolveAnimatedTileSliceId(animatedTileLookup, cell.tileId, animTimeMs)
@@ -164,27 +235,43 @@ export function renderLevelCanvas(
     }
 
     // Per-TileMap grid
-    const tmPxW = tileMap.mapWidthTiles * tileW;
-    const tmPxH = tileMap.mapHeightTiles * tileH;
-    context.strokeStyle = "rgba(255,255,255,0.06)";
-    context.lineWidth = 1;
-    context.beginPath();
-    for (let gx = 0; gx <= tileMap.mapWidthTiles; gx++) { context.moveTo(ox + gx * tileW, oy); context.lineTo(ox + gx * tileW, oy + tmPxH); }
-    for (let gy = 0; gy <= tileMap.mapHeightTiles; gy++) { context.moveTo(ox, oy + gy * tileH); context.lineTo(ox + tmPxW, oy + gy * tileH); }
-    context.stroke();
+    if (tileMap.projection === "orthogonal") {
+      context.strokeStyle = "rgba(255,255,255,0.06)";
+      context.lineWidth = 1;
+      context.beginPath();
+      for (let gx = 0; gx <= tileMap.mapWidthTiles; gx++) { context.moveTo(ox + gx * tileW, oy); context.lineTo(ox + gx * tileW, oy + tmBounds.h); }
+      for (let gy = 0; gy <= tileMap.mapHeightTiles; gy++) { context.moveTo(ox, oy + gy * tileH); context.lineTo(ox + tmBounds.w, oy + gy * tileH); }
+      context.stroke();
 
-    // Chunk boundaries
-    context.strokeStyle = "rgba(255,200,90,0.2)";
-    context.lineWidth = 1;
-    context.beginPath();
-    for (let gx = 0; gx <= tileMap.mapWidthTiles; gx += tileMap.chunkWidthTiles) { context.moveTo(ox + gx * tileW, oy); context.lineTo(ox + gx * tileW, oy + tmPxH); }
-    for (let gy = 0; gy <= tileMap.mapHeightTiles; gy += tileMap.chunkHeightTiles) { context.moveTo(ox, oy + gy * tileH); context.lineTo(ox + tmPxW, oy + gy * tileH); }
-    context.stroke();
+      context.strokeStyle = "rgba(255,200,90,0.2)";
+      context.lineWidth = 1;
+      context.beginPath();
+      for (let gx = 0; gx <= tileMap.mapWidthTiles; gx += tileMap.chunkWidthTiles) { context.moveTo(ox + gx * tileW, oy); context.lineTo(ox + gx * tileW, oy + tmBounds.h); }
+      for (let gy = 0; gy <= tileMap.mapHeightTiles; gy += tileMap.chunkHeightTiles) { context.moveTo(ox, oy + gy * tileH); context.lineTo(ox + tmBounds.w, oy + gy * tileH); }
+      context.stroke();
+    } else {
+      context.strokeStyle = "rgba(255,255,255,0.06)";
+      context.lineWidth = 1;
+      context.beginPath();
+      for (let gy = 0; gy <= tileMap.mapHeightTiles; gy++) {
+        const left = tileToScreen(0, gy, tileMap, zoom);
+        const right = tileToScreen(tileMap.mapWidthTiles, gy, tileMap, zoom);
+        context.moveTo(ox + left.x, oy + left.y);
+        context.lineTo(ox + right.x, oy + right.y);
+      }
+      for (let gx = 0; gx <= tileMap.mapWidthTiles; gx++) {
+        const top = tileToScreen(gx, 0, tileMap, zoom);
+        const bottom = tileToScreen(gx, tileMap.mapHeightTiles, tileMap, zoom);
+        context.moveTo(ox + top.x, oy + top.y);
+        context.lineTo(ox + bottom.x, oy + bottom.y);
+      }
+      context.stroke();
+    }
 
     // TileMap boundary
     context.strokeStyle = "rgba(240, 197, 123, 0.5)";
     context.lineWidth = 2;
-    context.strokeRect(ox, oy, tmPxW, tmPxH);
+    context.strokeRect(ox, oy, tmBounds.w, tmBounds.h);
   }
 }
 
