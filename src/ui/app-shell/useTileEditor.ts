@@ -19,7 +19,7 @@ import type {
   TilesetTileAsset,
 } from "../../types";
 import { getCanvasTile } from "./canvas";
-import { getWorldTransform } from "../../scene/helpers";
+import { findFirstTileMapNode, getWorldTransform } from "../../scene/helpers";
 
 interface TileEditorParams {
   state: AppState;
@@ -66,6 +66,12 @@ export function useTileEditor({
     return { x: wt.x, y: wt.y };
   }
 
+  function getSelectedTileMapOffsetFor(node: SceneNode): { x: number; y: number } {
+    if (!scene || node.data.type !== "TileMap") return { x: 0, y: 0 };
+    const wt = getWorldTransform(scene.root, node.id);
+    return { x: wt.x, y: wt.y };
+  }
+
   function resolveTerrainTileId(tm: TileMapNodeData, tileX: number, tileY: number, terrainSet: TerrainSet): number {
     const isTerrainAt = (x: number, y: number) => {
       if (x < 0 || y < 0 || x >= tm.mapWidthTiles || y >= tm.mapHeightTiles) return false;
@@ -107,9 +113,11 @@ export function useTileEditor({
     return (state.editor.savedBrushes ?? []).find((b) => b.id === state.editor.activeBrushId) ?? null;
   }
 
-  function dispatchTileMapUpdate(nextData: TileMapNodeData, silent: boolean) {
-    if (!scene || !selectedNode) return;
-    dispatch({ type: silent ? "updateSceneNodeDataSilent" : "updateSceneNodeData", sceneId: scene.id, nodeId: selectedNode.id, data: nextData });
+  function dispatchTileMapUpdate(nextData: TileMapNodeData, silent: boolean, nodeId?: string) {
+    if (!scene) return;
+    const id = nodeId ?? selectedNode?.id;
+    if (!id) return;
+    dispatch({ type: silent ? "updateSceneNodeDataSilent" : "updateSceneNodeData", sceneId: scene.id, nodeId: id, data: nextData });
   }
 
   function handleCopy() {
@@ -135,13 +143,28 @@ export function useTileEditor({
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {
-    if (!tileMapData || !selectedNode) return false;
-    const offset = getSelectedTileMapOffset();
-    const point = getCanvasTile(event, canvasRef.current, tileMapData, state.editor.levelZoom, offset.x, offset.y);
+    let activeTileMapData = tileMapData;
+    let activeNode = selectedNode;
+    if (!activeTileMapData || !activeNode || activeNode.data.type !== "TileMap") {
+      if (scene) {
+        const fallback = findFirstTileMapNode(scene.root);
+        if (fallback && fallback.data.type === "TileMap") {
+          dispatch({ type: "selectNode", nodeId: fallback.id });
+          activeTileMapData = fallback.data;
+          activeNode = fallback;
+        } else {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    }
+    const offset = getSelectedTileMapOffsetFor(activeNode);
+    const point = getCanvasTile(event, canvasRef.current, activeTileMapData, state.editor.levelZoom, offset.x, offset.y);
     if (!point) return false;
 
     if (event.altKey) {
-      const pickedTileId = getTileAt(tileMapData, point.x, point.y).tileId;
+      const pickedTileId = getTileAt(activeTileMapData, point.x, point.y).tileId;
       if (pickedTileId) {
         setSelectedPaintTileId(pickedTileId);
         pushRecentTile(pickedTileId);
@@ -155,26 +178,26 @@ export function useTileEditor({
     const tool = state.editor.levelTool;
 
     if (tool === "brush") {
-      strokeBaseRef.current = selectedNode;
+      strokeBaseRef.current = activeNode;
       strokeInProgressRef.current = true;
       const origin = brushOrigin(point, activeBrush);
-      dispatchTileMapUpdate(activeBrush ? paintBrush(tileMapData, origin.x, origin.y, activeBrush) : paintTile(tileMapData, point.x, point.y, paintTileId), true);
+      dispatchTileMapUpdate(activeBrush ? paintBrush(activeTileMapData, origin.x, origin.y, activeBrush) : paintTile(activeTileMapData, point.x, point.y, paintTileId), true, activeNode.id);
       return true;
     }
     if (tool === "terrain" && selectedTerrainSet) {
-      strokeBaseRef.current = selectedNode;
+      strokeBaseRef.current = activeNode;
       strokeInProgressRef.current = true;
-      dispatchTileMapUpdate(applyTerrainBrush(tileMapData, point.x, point.y, selectedTerrainSet), true);
+      dispatchTileMapUpdate(applyTerrainBrush(activeTileMapData, point.x, point.y, selectedTerrainSet), true, activeNode.id);
       return true;
     }
     if (tool === "erase") {
-      strokeBaseRef.current = selectedNode;
+      strokeBaseRef.current = activeNode;
       strokeInProgressRef.current = true;
-      dispatchTileMapUpdate(paintTile(tileMapData, point.x, point.y, 0), true);
+      dispatchTileMapUpdate(paintTile(activeTileMapData, point.x, point.y, 0), true, activeNode.id);
       return true;
     }
     if (tool === "bucket") {
-      dispatchTileMapUpdate(bucketFill(tileMapData, point.x, point.y, paintTileId), false);
+      dispatchTileMapUpdate(bucketFill(activeTileMapData, point.x, point.y, paintTileId), false, activeNode.id);
       return true;
     }
     if (tool === "select") { setLevelDragStart(point); setLevelSelection(null); return true; }

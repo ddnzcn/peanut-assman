@@ -259,6 +259,15 @@ export function findFirstTileMapInScene(root: SceneNode): TileMapNodeData | null
   return null;
 }
 
+export function findFirstTileMapNode(root: SceneNode): SceneNode | null {
+  if (root.data.type === "TileMap") return root;
+  for (const child of root.children) {
+    const found = findFirstTileMapNode(child);
+    if (found) return found;
+  }
+  return null;
+}
+
 export interface TileMapInstance {
   nodeId: string;
   data: TileMapNodeData;
