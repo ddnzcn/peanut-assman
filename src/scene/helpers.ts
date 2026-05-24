@@ -259,6 +259,40 @@ export function findFirstTileMapInScene(root: SceneNode): TileMapNodeData | null
   return null;
 }
 
+export interface TileMapInstance {
+  nodeId: string;
+  data: TileMapNodeData;
+  worldX: number;
+  worldY: number;
+}
+
+export function collectTileMapInstances(root: SceneNode): TileMapInstance[] {
+  const result: TileMapInstance[] = [];
+  function walk(node: SceneNode) {
+    if (!node.visible) return;
+    if (node.data.type === "TileMap") {
+      const wt = getWorldTransform(root, node.id);
+      result.push({ nodeId: node.id, data: node.data, worldX: wt.x, worldY: wt.y });
+    }
+    for (const child of node.children) walk(child);
+  }
+  walk(root);
+  return result;
+}
+
+export function computeSceneBounds(root: SceneNode): { width: number; height: number } {
+  let maxW = 1024;
+  let maxH = 768;
+  const instances = collectTileMapInstances(root);
+  for (const inst of instances) {
+    const right = inst.worldX + inst.data.mapWidthTiles * inst.data.tileWidth;
+    const bottom = inst.worldY + inst.data.mapHeightTiles * inst.data.tileHeight;
+    if (right > maxW) maxW = right;
+    if (bottom > maxH) maxH = bottom;
+  }
+  return { width: Math.max(maxW, 1024), height: Math.max(maxH, 768) };
+}
+
 export function countNodes(root: SceneNode): number {
   let count = 1;
   for (const child of root.children) {

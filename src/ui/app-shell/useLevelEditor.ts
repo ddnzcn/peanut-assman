@@ -21,7 +21,7 @@ import type {
 } from "../../types";
 import { getCanvasPixel, getCanvasTile, renderLevelCanvas, renderSceneNodes } from "./canvas";
 import { renderTilesWebGL } from "./webglTileRenderer";
-import { createNode, findNode, flattenNodes, getWorldTransform } from "../../scene/helpers";
+import { computeSceneBounds, createNode, findNode, flattenNodes, getWorldTransform } from "../../scene/helpers";
 
 interface LevelEditorParams {
   state: AppState;
@@ -85,12 +85,9 @@ export function useLevelEditor({
     let cancelled = false;
     const redraw = () => {
       if (cancelled) return;
-      if (webglCanvasRef.current && sceneTileMapData) {
-        renderTilesWebGL(webglCanvasRef.current, state.project, sceneTileMapData, state.editor.levelZoom);
-      }
-      renderLevelCanvas(levelCanvasRef.current, state.project, sceneTileMapData, state.editor.levelZoom, undefined, () => {
+      renderLevelCanvas(levelCanvasRef.current, state.project, scene, state.editor.levelZoom, undefined, () => {
         requestAnimationFrame(redraw);
-      }, !!webglCanvasRef.current);
+      });
       renderSceneNodes(levelCanvasRef.current, state.project, scene, state.editor.selectedNodeId, state.editor.levelZoom);
     };
     redraw();
@@ -117,10 +114,7 @@ export function useLevelEditor({
       if (levelAnimStartRef.current === null) levelAnimStartRef.current = now;
       levelAnimTimeRef.current = now - levelAnimStartRef.current;
       const { project, scene: s, sceneTileMapData: stm, selectedNodeId: selId, zoom } = levelRenderStateRef.current;
-      if (webglCanvasRef.current && stm) {
-        renderTilesWebGL(webglCanvasRef.current, project, stm, zoom, levelAnimTimeRef.current);
-      }
-      renderLevelCanvas(levelCanvasRef.current, project, stm, zoom, levelAnimTimeRef.current, undefined, !!webglCanvasRef.current);
+      renderLevelCanvas(levelCanvasRef.current, project, s, zoom, levelAnimTimeRef.current);
       renderSceneNodes(levelCanvasRef.current, project, s, selId, zoom);
       levelAnimRafRef.current = requestAnimationFrame(tick);
     };
@@ -138,12 +132,9 @@ export function useLevelEditor({
   useEffect(() => {
     const stage = levelStageRef.current;
     if (!stage || state.editor.workspace !== "level") return;
-    const vpW = sceneTileMapData
-      ? sceneTileMapData.mapWidthTiles * sceneTileMapData.tileWidth * state.editor.levelZoom
-      : 1024 * state.editor.levelZoom;
-    const vpH = sceneTileMapData
-      ? sceneTileMapData.mapHeightTiles * sceneTileMapData.tileHeight * state.editor.levelZoom
-      : 768 * state.editor.levelZoom;
+    const bounds = scene ? computeSceneBounds(scene.root) : { width: 1024, height: 768 };
+    const vpW = bounds.width * state.editor.levelZoom;
+    const vpH = bounds.height * state.editor.levelZoom;
     const centerViewport = () => {
       setLevelPan({
         x: (stage.clientWidth - vpW) * 0.5,
@@ -212,6 +203,12 @@ export function useLevelEditor({
       }
     }
     return next;
+  }
+
+  function getSelectedTileMapOffset(): { x: number; y: number } {
+    if (!scene || !selectedNode || selectedNode.data.type !== "TileMap") return { x: 0, y: 0 };
+    const wt = getWorldTransform(scene.root, selectedNode.id);
+    return { x: wt.x, y: wt.y };
   }
 
   function hitTestSceneNodes(root: SceneNode, px: number, py: number): SceneNode | null {
@@ -314,7 +311,7 @@ export function useLevelEditor({
     }
 
     if (!tileMapData || !selectedNode) return;
-    const point = getCanvasTile(event, levelCanvasRef.current, tileMapData, state.editor.levelZoom);
+    const point = getCanvasTile(event, levelCanvasRef.current, tileMapData, state.editor.levelZoom, getSelectedTileMapOffset().x, getSelectedTileMapOffset().y);
     if (!point) return;
 
     if (event.altKey) {
@@ -372,7 +369,7 @@ export function useLevelEditor({
       return;
     }
     if (!tileMapData || spaceHeld) return;
-    const point = getCanvasTile(event, levelCanvasRef.current, tileMapData, state.editor.levelZoom);
+    const point = getCanvasTile(event, levelCanvasRef.current, tileMapData, state.editor.levelZoom, getSelectedTileMapOffset().x, getSelectedTileMapOffset().y);
     if (!point) return;
 
     setCursorTile(point);
@@ -424,7 +421,7 @@ export function useLevelEditor({
       setLevelDragStart(null);
       return;
     }
-    const point = getCanvasTile(event, levelCanvasRef.current, tileMapData, state.editor.levelZoom);
+    const point = getCanvasTile(event, levelCanvasRef.current, tileMapData, state.editor.levelZoom, getSelectedTileMapOffset().x, getSelectedTileMapOffset().y);
     if (!point) {
       setLevelDragStart(null);
       return;

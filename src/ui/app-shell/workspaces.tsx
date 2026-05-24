@@ -11,7 +11,7 @@ import type {
 } from "../../types";
 import type { SlicerCanvasTool } from "./constants";
 import { rectStyle } from "./canvas";
-import { getWorldTransform } from "../../scene/helpers";
+import { computeSceneBounds, getWorldTransform } from "../../scene/helpers";
 
 interface SlicerSurfaceProps {
   source: SourceImageAsset | null;
@@ -263,12 +263,9 @@ export function LevelWorkspace(props: {
 }) {
   const { tileMapData, sceneTileMapData, scene, selectedNode, rectDragStart: rds, rectDragCurrent: rdc, levelZoom: zoom } = props;
 
-  const canvasW = sceneTileMapData
-    ? sceneTileMapData.mapWidthTiles * sceneTileMapData.tileWidth * zoom
-    : DEFAULT_VIEWPORT_W * zoom;
-  const canvasH = sceneTileMapData
-    ? sceneTileMapData.mapHeightTiles * sceneTileMapData.tileHeight * zoom
-    : DEFAULT_VIEWPORT_H * zoom;
+  const sceneBounds = scene ? computeSceneBounds(scene.root) : { width: DEFAULT_VIEWPORT_W, height: DEFAULT_VIEWPORT_H };
+  const canvasW = sceneBounds.width * zoom;
+  const canvasH = sceneBounds.height * zoom;
 
   const tileW = tileMapData ? tileMapData.tileWidth * zoom : 16 * zoom;
   const tileH = tileMapData ? tileMapData.tileHeight * zoom : 16 * zoom;
@@ -338,7 +335,7 @@ export function LevelWorkspace(props: {
 
   // Gizmo for selected node
   let gizmo: React.ReactNode = null;
-  if (selectedNode && scene && selectedNode.data.type !== "Root" && selectedNode.data.type !== "TileMap") {
+  if (selectedNode && scene && selectedNode.data.type !== "Root") {
     const wt = getWorldTransform(scene.root, selectedNode.id);
     const bounds = getNodeBounds(selectedNode);
     const gx = wt.x * zoom;

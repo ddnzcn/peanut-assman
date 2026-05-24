@@ -3,7 +3,7 @@ import { buildAnimatedTileLookup, resolveAnimatedTileSliceId } from "../../anima
 import { getTileAt } from "../../level/editor";
 import { calculateBlob47Mask, getTerrainSetMarkerTileId } from "../../terrain";
 import type { ProjectDocument, SceneDocument, SceneNode, SliceRect, SourceImageAsset, TileMapChunk, TileMapNodeData } from "../../types";
-import { flattenByRenderLayer, getWorldTransform } from "../../scene/helpers";
+import { collectTileMapInstances, flattenByRenderLayer, getWorldTransform, type TileMapInstance } from "../../scene/helpers";
 
 export function getImagePoint(
   event: ReactPointerEvent<HTMLDivElement>,
@@ -24,11 +24,13 @@ export function getCanvasTile(
   canvas: HTMLCanvasElement | null,
   tileMap: TileMapNodeData,
   zoom: number,
+  offsetX = 0,
+  offsetY = 0,
 ) {
   if (!canvas) return null;
   const bounds = canvas.getBoundingClientRect();
-  const x = Math.floor((event.clientX - bounds.left) / (tileMap.tileWidth * zoom));
-  const y = Math.floor((event.clientY - bounds.top) / (tileMap.tileHeight * zoom));
+  const x = Math.floor((event.clientX - bounds.left - offsetX * zoom) / (tileMap.tileWidth * zoom));
+  const y = Math.floor((event.clientY - bounds.top - offsetY * zoom) / (tileMap.tileHeight * zoom));
   if (x < 0 || y < 0 || x >= tileMap.mapWidthTiles || y >= tileMap.mapHeightTiles) return null;
   return { x, y };
 }
@@ -72,7 +74,7 @@ export function pointInRect(x: number, y: number, rect: SliceRect) {
 export function renderLevelCanvas(
   canvas: HTMLCanvasElement | null,
   project: ProjectDocument,
-  tileMap: TileMapNodeData | null,
+  scene: SceneDocument | null,
   zoom: number,
   animTimeMs?: number,
   onInvalidate?: () => void,
@@ -85,141 +87,129 @@ export function renderLevelCanvas(
   context.imageSmoothingEnabled = false;
   context.clearRect(0, 0, canvas.width, canvas.height);
 
-  if (!tileMap) {
+  // Always draw the viewport grid as background
+  if (!skipTiles) {
     drawViewportGrid(context, canvas.width, canvas.height, 16 * zoom, zoom);
-    return;
   }
 
-  const tileW = tileMap.tileWidth * zoom;
-  const tileH = tileMap.tileHeight * zoom;
-  if (!skipTiles) {
-    context.fillStyle = "#12171c";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-  }
+  if (!scene) return;
+
+  const tileMapInstances = collectTileMapInstances(scene.root);
+  if (!tileMapInstances.length) return;
 
   const { tileById, sliceById, sourceById, terrainSetsMap, animatedTileLookup, terrainTileToSetId } = getProjectMaps(project);
 
-  if (!skipTiles) for (const chunk of Object.values(tileMap.chunks) as TileMapChunk[]) {
-    for (let i = 0; i < chunk.tiles.length; i++) {
-      const cell = chunk.tiles[i];
-      if (!cell.tileId) continue;
+  for (const inst of tileMapInstances) {
+    const tileMap = inst.data;
+    const ox = inst.worldX * zoom;
+    const oy = inst.worldY * zoom;
+    const tileW = tileMap.tileWidth * zoom;
+    const tileH = tileMap.tileHeight * zoom;
 
-      const localX = i % tileMap.chunkWidthTiles;
-      const localY = Math.floor(i / tileMap.chunkWidthTiles);
-      const x = chunk.chunkX * tileMap.chunkWidthTiles + localX;
-      const y = chunk.chunkY * tileMap.chunkHeightTiles + localY;
+    if (!skipTiles) {
+      context.fillStyle = "rgba(18,23,28,0.85)";
+      context.fillRect(ox, oy, tileMap.mapWidthTiles * tileW, tileMap.mapHeightTiles * tileH);
 
-      const animSliceId = animTimeMs !== undefined
-        ? resolveAnimatedTileSliceId(animatedTileLookup, cell.tileId, animTimeMs)
-        : null;
-      const setId = terrainTileToSetId.get(cell.tileId);
-      const terrainSet = setId !== undefined ? terrainSetsMap.get(setId) : null;
+      for (const chunk of Object.values(tileMap.chunks) as TileMapChunk[]) {
+        for (let i = 0; i < chunk.tiles.length; i++) {
+          const cell = chunk.tiles[i];
+          if (!cell.tileId) continue;
 
-      if (terrainSet && terrainSet.mode === "blob47") {
-        const isTerrainAt = (tx: number, ty: number) => {
-          if (tx < 0 || ty < 0 || tx >= tileMap.mapWidthTiles || ty >= tileMap.mapHeightTiles) return false;
-          return terrainTileToSetId.get(getTileAt(tileMap, tx, ty).tileId) === setId;
-        };
-        const n = isTerrainAt(x, y - 1); const s = isTerrainAt(x, y + 1);
-        const w = isTerrainAt(x - 1, y); const e = isTerrainAt(x + 1, y);
-        const nw = isTerrainAt(x - 1, y - 1); const ne = isTerrainAt(x + 1, y - 1);
-        const sw = isTerrainAt(x - 1, y + 1); const se = isTerrainAt(x + 1, y + 1);
-        const mask = calculateBlob47Mask(n, s, w, e, nw, ne, sw, se);
-        const blobTileId = terrainSet.slots[mask] || getTerrainSetMarkerTileId(terrainSet);
-        const blobAsset = tileById.get(blobTileId);
-        const blobSlice = blobAsset ? sliceById.get(blobAsset.sliceId) : null;
-        const blobSource = blobSlice ? sourceById.get(blobSlice.sourceImageId) : null;
-        const blobImage = blobSource ? getCachedRenderImage(blobSource.id, blobSource.dataUrl, onInvalidate) : null;
-        if (blobSlice && blobImage?.complete && blobImage.naturalWidth) {
-          context.drawImage(blobImage, blobSlice.sourceRect.x, blobSlice.sourceRect.y, blobSlice.sourceRect.width, blobSlice.sourceRect.height, x * tileW, y * tileH, tileW, tileH);
-        } else {
-          context.fillStyle = "#37526a";
-          context.fillRect(x * tileW, y * tileH, tileW, tileH);
-        }
-        continue;
-      }
+          const localX = i % tileMap.chunkWidthTiles;
+          const localY = Math.floor(i / tileMap.chunkWidthTiles);
+          const x = chunk.chunkX * tileMap.chunkWidthTiles + localX;
+          const y = chunk.chunkY * tileMap.chunkHeightTiles + localY;
+          const px = ox + x * tileW;
+          const py = oy + y * tileH;
 
-      if (terrainSet && (terrainSet.mode === "subtile" || terrainSet.mode === "rpgmaker")) {
-        const isTerrainAt = (tx: number, ty: number) => {
-          if (tx < 0 || ty < 0 || tx >= tileMap.mapWidthTiles || ty >= tileMap.mapHeightTiles) return false;
-          return terrainTileToSetId.get(getTileAt(tileMap, tx, ty).tileId) === setId;
-        };
-        const n = isTerrainAt(x, y - 1); const s = isTerrainAt(x, y + 1);
-        const w = isTerrainAt(x - 1, y); const e = isTerrainAt(x + 1, y);
-        const nw = isTerrainAt(x - 1, y - 1); const ne = isTerrainAt(x + 1, y - 1);
-        const sw = isTerrainAt(x - 1, y + 1); const se = isTerrainAt(x + 1, y + 1);
-        const drawSubtile = (qIdx: number, n1: boolean, n2: boolean, diag: boolean, xOff: number, yOff: number) => {
-          let st = 0;
-          if (n1 && n2) st = diag ? 4 : 3;
-          else if (n1) st = 1;
-          else if (n2) st = 2;
-          const qTileId = terrainSet.slots[qIdx * 5 + st];
-          const qTile = qTileId ? tileById.get(qTileId) : null;
-          const qSlice = qTile ? sliceById.get(qTile.sliceId) : null;
-          const qSource = qSlice ? sourceById.get(qSlice.sourceImageId) : null;
-          const qImage = qSource ? getCachedRenderImage(qSource.id, qSource.dataUrl, onInvalidate) : null;
-          if (qSlice && qImage?.complete && qImage.naturalWidth) {
-            context.drawImage(qImage, qSlice.sourceRect.x, qSlice.sourceRect.y, qSlice.sourceRect.width, qSlice.sourceRect.height, x * tileW + (xOff * tileW) / 2, y * tileH + (yOff * tileH) / 2, tileW / 2, tileH / 2);
-          } else {
-            context.fillStyle = "#37526a";
-            context.fillRect(x * tileW + (xOff * tileW) / 2, y * tileH + (yOff * tileH) / 2, tileW / 2, tileH / 2);
+          const animSliceId = animTimeMs !== undefined
+            ? resolveAnimatedTileSliceId(animatedTileLookup, cell.tileId, animTimeMs)
+            : null;
+          const setId = terrainTileToSetId.get(cell.tileId);
+          const terrainSet = setId !== undefined ? terrainSetsMap.get(setId) : null;
+
+          if (terrainSet && terrainSet.mode === "blob47") {
+            const isTerrainAt = (tx: number, ty: number) => {
+              if (tx < 0 || ty < 0 || tx >= tileMap.mapWidthTiles || ty >= tileMap.mapHeightTiles) return false;
+              return terrainTileToSetId.get(getTileAt(tileMap, tx, ty).tileId) === setId;
+            };
+            const mask = calculateBlob47Mask(
+              isTerrainAt(x, y - 1), isTerrainAt(x, y + 1), isTerrainAt(x - 1, y), isTerrainAt(x + 1, y),
+              isTerrainAt(x - 1, y - 1), isTerrainAt(x + 1, y - 1), isTerrainAt(x - 1, y + 1), isTerrainAt(x + 1, y + 1),
+            );
+            const blobTileId = terrainSet.slots[mask] || getTerrainSetMarkerTileId(terrainSet);
+            drawTileToCanvas(context, blobTileId, null, px, py, tileW, tileH, tileById, sliceById, sourceById, onInvalidate);
+            continue;
           }
-        };
-        drawSubtile(0, n, w, nw, 0, 0);
-        drawSubtile(1, n, e, ne, 1, 0);
-        drawSubtile(2, s, w, sw, 0, 1);
-        drawSubtile(3, s, e, se, 1, 1);
-        continue;
-      }
 
-      const slice = animSliceId
-        ? sliceById.get(animSliceId)
-        : (() => { const a = tileById.get(cell.tileId); return a ? sliceById.get(a.sliceId) : null; })();
-      const source = slice ? sourceById.get(slice.sourceImageId) : null;
-      const image = source ? getCachedRenderImage(source.id, source.dataUrl, onInvalidate) : null;
-      if (!slice || !image?.complete || !image.naturalWidth) {
-        context.fillStyle = "#37526a";
-        context.fillRect(x * tileW, y * tileH, tileW, tileH);
-        continue;
+          if (terrainSet && (terrainSet.mode === "subtile" || terrainSet.mode === "rpgmaker")) {
+            const isTerrainAt = (tx: number, ty: number) => {
+              if (tx < 0 || ty < 0 || tx >= tileMap.mapWidthTiles || ty >= tileMap.mapHeightTiles) return false;
+              return terrainTileToSetId.get(getTileAt(tileMap, tx, ty).tileId) === setId;
+            };
+            const n = isTerrainAt(x, y - 1), s = isTerrainAt(x, y + 1), w2 = isTerrainAt(x - 1, y), e = isTerrainAt(x + 1, y);
+            const nw = isTerrainAt(x - 1, y - 1), ne = isTerrainAt(x + 1, y - 1), sw = isTerrainAt(x - 1, y + 1), se = isTerrainAt(x + 1, y + 1);
+            const sub = (qi: number, n1: boolean, n2: boolean, diag: boolean, xo: number, yo: number) => {
+              let st = 0;
+              if (n1 && n2) st = diag ? 4 : 3; else if (n1) st = 1; else if (n2) st = 2;
+              drawTileToCanvas(context, terrainSet.slots[qi * 5 + st] || 0, null, px + xo * tileW / 2, py + yo * tileH / 2, tileW / 2, tileH / 2, tileById, sliceById, sourceById, onInvalidate);
+            };
+            sub(0, n, w2, nw, 0, 0); sub(1, n, e, ne, 1, 0); sub(2, s, w2, sw, 0, 1); sub(3, s, e, se, 1, 1);
+            continue;
+          }
+
+          drawTileToCanvas(context, cell.tileId, animSliceId, px, py, tileW, tileH, tileById, sliceById, sourceById, onInvalidate);
+        }
       }
-      context.drawImage(image, slice.sourceRect.x, slice.sourceRect.y, slice.sourceRect.width, slice.sourceRect.height, x * tileW, y * tileH, tileW, tileH);
     }
-  }
 
-  // Grid
-  context.strokeStyle = "rgba(255,255,255,0.08)";
-  context.lineWidth = 1;
-  context.beginPath();
-  for (let x = 0; x <= tileMap.mapWidthTiles; x++) {
-    context.moveTo(x * tileW, 0);
-    context.lineTo(x * tileW, canvas.height);
-  }
-  for (let y = 0; y <= tileMap.mapHeightTiles; y++) {
-    context.moveTo(0, y * tileH);
-    context.lineTo(canvas.width, y * tileH);
-  }
-  context.stroke();
+    // Per-TileMap grid
+    const tmPxW = tileMap.mapWidthTiles * tileW;
+    const tmPxH = tileMap.mapHeightTiles * tileH;
+    context.strokeStyle = "rgba(255,255,255,0.06)";
+    context.lineWidth = 1;
+    context.beginPath();
+    for (let gx = 0; gx <= tileMap.mapWidthTiles; gx++) { context.moveTo(ox + gx * tileW, oy); context.lineTo(ox + gx * tileW, oy + tmPxH); }
+    for (let gy = 0; gy <= tileMap.mapHeightTiles; gy++) { context.moveTo(ox, oy + gy * tileH); context.lineTo(ox + tmPxW, oy + gy * tileH); }
+    context.stroke();
 
-  // Chunk boundaries
-  context.strokeStyle = "rgba(255,200,90,0.3)";
-  context.lineWidth = 1.5;
-  context.beginPath();
-  for (let x = 0; x <= tileMap.mapWidthTiles; x += tileMap.chunkWidthTiles) {
-    context.moveTo(x * tileW, 0);
-    context.lineTo(x * tileW, canvas.height);
-  }
-  for (let y = 0; y <= tileMap.mapHeightTiles; y += tileMap.chunkHeightTiles) {
-    context.moveTo(0, y * tileH);
-    context.lineTo(canvas.width, y * tileH);
-  }
-  context.stroke();
+    // Chunk boundaries
+    context.strokeStyle = "rgba(255,200,90,0.2)";
+    context.lineWidth = 1;
+    context.beginPath();
+    for (let gx = 0; gx <= tileMap.mapWidthTiles; gx += tileMap.chunkWidthTiles) { context.moveTo(ox + gx * tileW, oy); context.lineTo(ox + gx * tileW, oy + tmPxH); }
+    for (let gy = 0; gy <= tileMap.mapHeightTiles; gy += tileMap.chunkHeightTiles) { context.moveTo(ox, oy + gy * tileH); context.lineTo(ox + tmPxW, oy + gy * tileH); }
+    context.stroke();
 
-  // TileMap boundary outline
-  const tmW = tileMap.mapWidthTiles * tileW;
-  const tmH = tileMap.mapHeightTiles * tileH;
-  context.strokeStyle = "rgba(240, 197, 123, 0.5)";
-  context.lineWidth = 2;
-  context.strokeRect(0, 0, tmW, tmH);
+    // TileMap boundary
+    context.strokeStyle = "rgba(240, 197, 123, 0.5)";
+    context.lineWidth = 2;
+    context.strokeRect(ox, oy, tmPxW, tmPxH);
+  }
+}
+
+function drawTileToCanvas(
+  context: CanvasRenderingContext2D,
+  tileId: number,
+  animSliceId: string | null,
+  px: number, py: number, w: number, h: number,
+  tileById: Map<number, import("../../types").TilesetTileAsset>,
+  sliceById: Map<string, import("../../types").SliceAsset>,
+  sourceById: Map<string, import("../../types").SourceImageAsset>,
+  onInvalidate?: () => void,
+) {
+  if (!tileId) return;
+  const slice = animSliceId
+    ? sliceById.get(animSliceId)
+    : (() => { const a = tileById.get(tileId); return a ? sliceById.get(a.sliceId) : undefined; })();
+  const source = slice ? sourceById.get(slice.sourceImageId) : undefined;
+  const image = source ? getCachedRenderImage(source.id, source.dataUrl, onInvalidate) : null;
+  if (!slice || !image?.complete || !image.naturalWidth) {
+    context.fillStyle = "#37526a";
+    context.fillRect(px, py, w, h);
+    return;
+  }
+  context.drawImage(image, slice.sourceRect.x, slice.sourceRect.y, slice.sourceRect.width, slice.sourceRect.height, px, py, w, h);
 }
 
 function drawViewportGrid(context: CanvasRenderingContext2D, w: number, h: number, cellSize: number, _zoom: number) {
