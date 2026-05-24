@@ -20,6 +20,7 @@ import type {
   TilesetTileAsset,
 } from "../../types";
 import { getCanvasPixel, getCanvasTile, renderLevelCanvas, renderSceneNodes } from "./canvas";
+import { renderTilesWebGL } from "./webglTileRenderer";
 import { createNode } from "../../scene/helpers";
 
 interface LevelEditorParams {
@@ -55,6 +56,7 @@ export function useLevelEditor({
 }: LevelEditorParams) {
   const levelStageRef = useRef<HTMLDivElement | null>(null);
   const levelCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const webglCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const strokeBaseRef = useRef<SceneNode | null>(null);
   const strokeInProgressRef = useRef(false);
   const levelAnimRafRef = useRef<number | null>(null);
@@ -79,9 +81,12 @@ export function useLevelEditor({
     let cancelled = false;
     const redraw = () => {
       if (cancelled) return;
+      if (webglCanvasRef.current && tileMapData) {
+        renderTilesWebGL(webglCanvasRef.current, state.project, tileMapData, state.editor.levelZoom);
+      }
       renderLevelCanvas(levelCanvasRef.current, state.project, tileMapData, state.editor.levelZoom, undefined, () => {
         requestAnimationFrame(redraw);
-      });
+      }, !!webglCanvasRef.current);
       renderSceneNodes(levelCanvasRef.current, state.project, scene, state.editor.selectedNodeId, state.editor.levelZoom);
     };
     redraw();
@@ -108,7 +113,10 @@ export function useLevelEditor({
       if (levelAnimStartRef.current === null) levelAnimStartRef.current = now;
       levelAnimTimeRef.current = now - levelAnimStartRef.current;
       const { project, scene: s, tileMapData: tm, selectedNodeId: selId, zoom } = levelRenderStateRef.current;
-      renderLevelCanvas(levelCanvasRef.current, project, tm, zoom, levelAnimTimeRef.current);
+      if (webglCanvasRef.current && tm) {
+        renderTilesWebGL(webglCanvasRef.current, project, tm, zoom, levelAnimTimeRef.current);
+      }
+      renderLevelCanvas(levelCanvasRef.current, project, tm, zoom, levelAnimTimeRef.current, undefined, !!webglCanvasRef.current);
       renderSceneNodes(levelCanvasRef.current, project, s, selId, zoom);
       levelAnimRafRef.current = requestAnimationFrame(tick);
     };
@@ -394,6 +402,7 @@ export function useLevelEditor({
   return {
     levelStageRef,
     levelCanvasRef,
+    webglCanvasRef,
     levelAnimTimeRef,
     levelSelection,
     setLevelSelection,

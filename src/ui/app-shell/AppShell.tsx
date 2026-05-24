@@ -388,6 +388,7 @@ export function AppShell() {
     atlasStageRef,
     levelStageRef,
     levelCanvasRef,
+    webglCanvasRef,
     levelCursorClass,
     importImages,
     loadProject,
@@ -656,6 +657,7 @@ export function AppShell() {
             levelZoom={state.editor.levelZoom}
             levelPan={levelPan}
             levelCanvasRef={levelCanvasRef}
+            webglCanvasRef={webglCanvasRef}
             stageRef={levelStageRef}
             cursorClass={levelCursorClass}
             rectDragStart={rectDragStart}

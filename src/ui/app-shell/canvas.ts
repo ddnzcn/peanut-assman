@@ -76,6 +76,7 @@ export function renderLevelCanvas(
   zoom: number,
   animTimeMs?: number,
   onInvalidate?: () => void,
+  skipTiles = false,
 ) {
   if (!canvas || !tileMap) return;
   const context = canvas.getContext("2d");
@@ -85,12 +86,14 @@ export function renderLevelCanvas(
   const tileH = tileMap.tileHeight * zoom;
   context.imageSmoothingEnabled = false;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = "#12171c";
-  context.fillRect(0, 0, canvas.width, canvas.height);
+  if (!skipTiles) {
+    context.fillStyle = "#12171c";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  }
 
   const { tileById, sliceById, sourceById, terrainSetsMap, animatedTileLookup, terrainTileToSetId } = getProjectMaps(project);
 
-  for (const chunk of Object.values(tileMap.chunks) as TileMapChunk[]) {
+  if (!skipTiles) for (const chunk of Object.values(tileMap.chunks) as TileMapChunk[]) {
     for (let i = 0; i < chunk.tiles.length; i++) {
       const cell = chunk.tiles[i];
       if (!cell.tileId) continue;

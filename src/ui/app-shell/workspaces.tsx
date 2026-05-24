@@ -197,6 +197,7 @@ export function LevelWorkspace(props: {
   levelPan: { x: number; y: number };
   cursorClass: string;
   levelCanvasRef: RefObject<HTMLCanvasElement>;
+  webglCanvasRef: RefObject<HTMLCanvasElement>;
   stageRef: RefObject<HTMLDivElement>;
   rectDragStart: { x: number; y: number } | null;
   rectDragCurrent: { x: number; y: number } | null;
@@ -304,9 +305,16 @@ export function LevelWorkspace(props: {
           <div className="viewport-inner">
             <div className="viewport-camera" style={{ transform: `translate(${props.levelPan.x}px, ${props.levelPan.y}px)`, position: "relative" }}>
               <canvas
+                ref={props.webglCanvasRef}
+                width={((props.tileMapData?.mapWidthTiles ?? 0) * (props.tileMapData?.tileWidth ?? 0) * props.levelZoom)}
+                height={((props.tileMapData?.mapHeightTiles ?? 0) * (props.tileMapData?.tileHeight ?? 0) * props.levelZoom)}
+                style={{ position: "absolute", top: 0, left: 0, imageRendering: "pixelated" }}
+              />
+              <canvas
                 ref={props.levelCanvasRef}
                 width={((props.tileMapData?.mapWidthTiles ?? 0) * (props.tileMapData?.tileWidth ?? 0) * props.levelZoom)}
                 height={((props.tileMapData?.mapHeightTiles ?? 0) * (props.tileMapData?.tileHeight ?? 0) * props.levelZoom)}
+                style={{ position: "relative", background: "transparent" }}
                 onPointerDown={props.onCanvasPointerDown}
                 onPointerMove={props.onCanvasPointerMove}
                 onPointerUp={props.onCanvasPointerUp}
