@@ -264,6 +264,8 @@ export interface TileMapInstance {
   data: TileMapNodeData;
   worldX: number;
   worldY: number;
+  parallaxX: number;
+  parallaxY: number;
 }
 
 export function collectTileMapInstances(root: SceneNode): TileMapInstance[] {
@@ -272,7 +274,7 @@ export function collectTileMapInstances(root: SceneNode): TileMapInstance[] {
     if (!node.visible) return;
     if (node.data.type === "TileMap") {
       const wt = getWorldTransform(root, node.id);
-      result.push({ nodeId: node.id, data: node.data, worldX: wt.x, worldY: wt.y });
+      result.push({ nodeId: node.id, data: node.data, worldX: wt.x, worldY: wt.y, parallaxX: node.parallaxX, parallaxY: node.parallaxY });
     }
     for (const child of node.children) walk(child);
   }

@@ -138,6 +138,7 @@ export function useAppShellController() {
     tilePalette,
     terrainTileToSetId,
     spaceHeld,
+    levelPan,
     setLevelPan,
   });
 

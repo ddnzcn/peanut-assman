@@ -147,6 +147,7 @@ export function renderLevelCanvas(
   animTimeMs?: number,
   onInvalidate?: () => void,
   skipTiles = false,
+  cameraPan?: { x: number; y: number },
 ) {
   if (!canvas) return;
   const context = canvas.getContext("2d");
@@ -169,8 +170,10 @@ export function renderLevelCanvas(
 
   for (const inst of tileMapInstances) {
     const tileMap = inst.data;
-    const ox = inst.worldX * zoom;
-    const oy = inst.worldY * zoom;
+    const pxOffX = cameraPan ? cameraPan.x * (1 - inst.parallaxX) : 0;
+    const pxOffY = cameraPan ? cameraPan.y * (1 - inst.parallaxY) : 0;
+    const ox = inst.worldX * zoom + pxOffX;
+    const oy = inst.worldY * zoom + pxOffY;
     const tileW = tileMap.tileWidth * zoom;
     const tileH = tileMap.tileHeight * zoom;
 
@@ -349,6 +352,7 @@ export function renderSceneNodes(
   selectedNodeId: string | null,
   zoom: number,
   onInvalidate?: () => void,
+  cameraPan?: { x: number; y: number },
 ) {
   if (!canvas || !scene) return;
   const context = canvas.getContext("2d");
@@ -364,8 +368,10 @@ export function renderSceneNodes(
       if (node.data.type === "Root" || node.data.type === "Node2D" || node.data.type === "TileMap") continue;
 
       const wt = getWorldTransform(scene.root, node.id);
-      const px = wt.x * zoom;
-      const py = wt.y * zoom;
+      const pxOff = cameraPan ? cameraPan.x * (1 - node.parallaxX) : 0;
+      const pyOff = cameraPan ? cameraPan.y * (1 - node.parallaxY) : 0;
+      const px = wt.x * zoom + pxOff;
+      const py = wt.y * zoom + pyOff;
 
       if (node.data.type === "Sprite") {
         const slice = sliceById.get(node.data.sliceId);
