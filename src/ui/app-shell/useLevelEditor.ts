@@ -214,11 +214,12 @@ export function useLevelEditor({
   function hitTestSceneNodes(root: SceneNode, px: number, py: number): SceneNode | null {
     const nodes = flattenNodes(root).reverse();
     for (const node of nodes) {
-      if (node.data.type === "Root" || node.data.type === "Node2D" || node.data.type === "TileMap") continue;
+      if (node.data.type === "Root" || node.data.type === "Node2D") continue;
       if (!node.visible) continue;
       const wt = getWorldTransform(root, node.id);
       let w = 16, h = 16;
-      if (node.data.type === "CollisionShape") { w = node.data.width; h = node.data.height; }
+      if (node.data.type === "TileMap") { w = node.data.mapWidthTiles * node.data.tileWidth; h = node.data.mapHeightTiles * node.data.tileHeight; }
+      else if (node.data.type === "CollisionShape") { w = node.data.width; h = node.data.height; }
       else if (node.data.type === "Area") { w = node.data.width; h = node.data.height; }
       else if (node.data.type === "Light2D") { w = node.data.radius * 2; h = node.data.radius * 2; }
       if (px >= wt.x && px <= wt.x + w && py >= wt.y && py <= wt.y + h) {
