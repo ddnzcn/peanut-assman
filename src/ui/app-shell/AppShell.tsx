@@ -36,6 +36,7 @@ import {
   AtlasInspector,
 } from "../app-shell/inspectors";
 import { SceneTree } from "../app-shell/SceneTree";
+import { NodeInspector } from "../app-shell/NodeInspector";
 import { AtlasAssetsPanel, LevelAssetPicker } from "../app-shell/pickers";
 import { TileAssetPreview } from "../app-shell/shared";
 import { clamp } from "../../utils";
@@ -746,18 +747,8 @@ export function AppShell() {
                 onCreateSlices={createAtlasSlices}
                 onSetModule={setAtlasModule}
               />
-            ) : selectedNode ? (
-              <div style={{ padding: "0.5rem", fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                <p><strong>{selectedNode.name}</strong> ({selectedNode.data.type})</p>
-                {/* TODO: NodeInspector per type */}
-                {tileMapData && (
-                  <div style={{ marginTop: "0.5rem" }}>
-                    <p>Map: {tileMapData.mapWidthTiles}x{tileMapData.mapHeightTiles}</p>
-                    <p>Tile: {tileMapData.tileWidth}x{tileMapData.tileHeight}</p>
-                    <p>Projection: {tileMapData.projection}</p>
-                  </div>
-                )}
-              </div>
+            ) : selectedNode && scene ? (
+              <NodeInspector scene={scene} node={selectedNode} dispatch={dispatch} />
             ) : null}
             </div>
           </div>

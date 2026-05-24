@@ -572,6 +572,79 @@
   border-radius: 2px;
 }
 
+/* ---- Inspector ---- */
+.inspector-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.inspector-list label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.inspector-list input[type="text"],
+.inspector-list input[type="number"],
+.inspector-list select {
+  padding: 0.25rem 0.4rem;
+  font-size: 0.76rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.inspector-list input:not([type]),
+.inspector-list input[type="text"] {
+  padding: 0.25rem 0.4rem;
+  font-size: 0.76rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+}
+
+.inspector-list select {
+  cursor: pointer;
+}
+
+.inspector-section-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 0.5rem;
+  padding-bottom: 0.15rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.inspector-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.inspector-row-2 > label {
+  flex: 1;
+  min-width: 0;
+}
+
+.checkbox-row {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.4rem !important;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: auto;
+  margin-left: auto;
+}
+
 /* Scrollbar styling */
 .pn-sidebar-left::-webkit-scrollbar,
 .pn-right-inspector::-webkit-scrollbar,

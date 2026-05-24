@@ -21,7 +21,7 @@ import type {
 } from "../../types";
 import { getCanvasPixel, getCanvasTile, renderLevelCanvas, renderSceneNodes } from "./canvas";
 import { renderTilesWebGL } from "./webglTileRenderer";
-import { createNode } from "../../scene/helpers";
+import { createNode, findNode, flattenNodes, getWorldTransform } from "../../scene/helpers";
 
 interface LevelEditorParams {
   state: AppState;
@@ -67,6 +67,7 @@ export function useLevelEditor({
   const [cursorTile, setCursorTile] = useState<{ x: number; y: number } | null>(null);
   const [objectPlaceType, setObjectPlaceType] = useState<SceneNodeType>("Sprite");
   const [clipboardBrush, setClipboardBrush] = useState<TileBrush | null>(null);
+  const objectDragRef = useRef<{ nodeId: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
   const [levelDragStart, setLevelDragStart] = useState<{ x: number; y: number } | null>(null);
   const [rectDragCurrent, setRectDragCurrent] = useState<{ x: number; y: number } | null>(null);
   const [levelSelection, setLevelSelection] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
@@ -204,6 +205,23 @@ export function useLevelEditor({
     return next;
   }
 
+  function hitTestSceneNodes(root: SceneNode, px: number, py: number): SceneNode | null {
+    const nodes = flattenNodes(root).reverse();
+    for (const node of nodes) {
+      if (node.data.type === "Root" || node.data.type === "Node2D" || node.data.type === "TileMap") continue;
+      if (!node.visible) continue;
+      const wt = getWorldTransform(root, node.id);
+      let w = 16, h = 16;
+      if (node.data.type === "CollisionShape") { w = node.data.width; h = node.data.height; }
+      else if (node.data.type === "Area") { w = node.data.width; h = node.data.height; }
+      else if (node.data.type === "Light2D") { w = node.data.radius * 2; h = node.data.radius * 2; }
+      if (px >= wt.x && px <= wt.x + w && py >= wt.y && py <= wt.y + h) {
+        return node;
+      }
+    }
+    return null;
+  }
+
   function brushOrigin(point: { x: number; y: number }, brush: TileBrush | null) {
     if (!brush) return point;
     return { x: point.x - Math.floor(brush.width / 2), y: point.y - Math.floor(brush.height / 2) };
@@ -269,6 +287,23 @@ export function useLevelEditor({
       return;
     }
 
+    if (state.editor.levelTool === "objectSelect") {
+      const pixel = getCanvasPixel(event, levelCanvasRef.current, state.editor.levelZoom);
+      if (!pixel) return;
+      const hitNode = hitTestSceneNodes(scene.root, pixel.x, pixel.y);
+      if (hitNode) {
+        dispatch({ type: "selectNode", nodeId: hitNode.id });
+        objectDragRef.current = {
+          nodeId: hitNode.id,
+          startX: pixel.x,
+          startY: pixel.y,
+          origX: hitNode.transform.x,
+          origY: hitNode.transform.y,
+        };
+      }
+      return;
+    }
+
     if (!tileMapData || !selectedNode) return;
     const point = getCanvasTile(event, levelCanvasRef.current, tileMapData, state.editor.levelZoom);
     if (!point) return;
@@ -313,6 +348,20 @@ export function useLevelEditor({
   }
 
   function handleLevelPointerMove(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (objectDragRef.current && scene && event.buttons === 1) {
+      const pixel = getCanvasPixel(event, levelCanvasRef.current, state.editor.levelZoom);
+      if (!pixel) return;
+      const drag = objectDragRef.current;
+      const dx = pixel.x - drag.startX;
+      const dy = pixel.y - drag.startY;
+      dispatch({
+        type: "updateSceneNodeSilent",
+        sceneId: scene.id,
+        nodeId: drag.nodeId,
+        patch: { transform: { ...findNode(scene.root, drag.nodeId)?.transform ?? { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 }, x: drag.origX + dx, y: drag.origY + dy } },
+      });
+      return;
+    }
     if (!tileMapData || spaceHeld) return;
     const point = getCanvasTile(event, levelCanvasRef.current, tileMapData, state.editor.levelZoom);
     if (!point) return;
@@ -340,6 +389,10 @@ export function useLevelEditor({
   }
 
   function handleLevelPointerUp(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (objectDragRef.current) {
+      objectDragRef.current = null;
+      return;
+    }
     if (strokeInProgressRef.current && strokeBaseRef.current && scene && selectedNode) {
       dispatch({
         type: "commitSceneStroke",
