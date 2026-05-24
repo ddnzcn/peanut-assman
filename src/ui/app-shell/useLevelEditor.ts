@@ -123,19 +123,22 @@ export function useLevelEditor({
     };
   }, [(state.project.animatedTiles?.length ?? 0), state.editor.workspace]);
 
-  // Center viewport
+  // Center viewport on scene change and window resize (NOT on zoom — zoom adjusts pan itself)
   useEffect(() => {
     const stage = levelStageRef.current;
     if (!stage || state.editor.workspace !== "level") return;
-    const bounds = scene ? computeSceneBounds(scene.root) : { width: 1024, height: 768 };
-    const vpW = bounds.width * state.editor.levelZoom;
-    const vpH = bounds.height * state.editor.levelZoom;
-    const centerViewport = () => setLevelPan({ x: (stage.clientWidth - vpW) * 0.5, y: (stage.clientHeight - vpH) * 0.5 });
+    const centerViewport = () => {
+      const bounds = scene ? computeSceneBounds(scene.root) : { width: 1024, height: 768 };
+      const { zoom } = levelRenderStateRef.current;
+      const vpW = bounds.width * zoom;
+      const vpH = bounds.height * zoom;
+      setLevelPan({ x: (stage.clientWidth - vpW) * 0.5, y: (stage.clientHeight - vpH) * 0.5 });
+    };
     const initialFrame = requestAnimationFrame(() => { centerViewport(); requestAnimationFrame(centerViewport); });
     const resizeObserver = new ResizeObserver(centerViewport);
     resizeObserver.observe(stage);
     return () => { cancelAnimationFrame(initialFrame); resizeObserver.disconnect(); };
-  }, [selectedNode?.id, state.editor.levelZoom, state.editor.workspace, setLevelPan]);
+  }, [scene?.id, state.editor.workspace, setLevelPan]);
 
   // Composed pointer handlers
   function handleLevelPointerDown(event: ReactPointerEvent<HTMLCanvasElement>) {

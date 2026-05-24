@@ -362,7 +362,7 @@ export function useAppShellController() {
       }
       return;
     }
-    const zoomSensitivity = event.deltaMode === 0 ? 0.005 : 0.05;
+    const zoomSensitivity = event.deltaMode === 0 ? 0.002 : 0.05;
     const nextZoom = clamp(currentZoom * Math.exp(-event.deltaY * zoomSensitivity), workspace === "level" ? 0.25 : 0.25, 16);
     const bounds = event.currentTarget.getBoundingClientRect();
     const style = window.getComputedStyle(event.currentTarget);
