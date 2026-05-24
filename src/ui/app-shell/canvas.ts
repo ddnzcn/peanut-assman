@@ -192,6 +192,7 @@ export function renderLevelCanvas(
           const localY = Math.floor(i / tileMap.chunkWidthTiles);
           const x = chunk.chunkX * tileMap.chunkWidthTiles + localX;
           const y = chunk.chunkY * tileMap.chunkHeightTiles + localY;
+          if (x >= tileMap.mapWidthTiles || y >= tileMap.mapHeightTiles) continue;
           const tileScreen = tileToScreen(x, y, tileMap, zoom);
           const px = ox + tileScreen.x;
           const py = oy + tileScreen.y;
