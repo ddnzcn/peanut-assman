@@ -686,6 +686,7 @@ export function AppShell() {
             onStagePanStart={(event) => handlePanStart(event, "level", true)}
             onStagePanMove={handlePanMove}
             onStagePanEnd={handlePanEnd}
+            dispatch={dispatch}
           />
         )}
       </section>

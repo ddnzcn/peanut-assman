@@ -1,6 +1,8 @@
+import { useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject, WheelEvent as ReactWheelEvent } from "react";
 import type {
   ManualSliceRect,
+  ProjectAction,
   PackedAtlas,
   SceneDocument,
   SceneNode,
@@ -260,6 +262,7 @@ export function LevelWorkspace(props: {
   onStagePanStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStagePanMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStagePanEnd: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  dispatch: React.Dispatch<ProjectAction>;
 }) {
   const { tileMapData, sceneTileMapData, scene, selectedNode, rectDragStart: rds, rectDragCurrent: rdc, levelZoom: zoom } = props;
 
@@ -333,6 +336,48 @@ export function LevelWorkspace(props: {
     };
   }
 
+  // Gizmo resize state
+  type HandleEdge = "right" | "bottom" | "corner";
+  const resizeDragRef = useRef<{ edge: HandleEdge; startX: number; startY: number; origW: number; origH: number } | null>(null);
+
+  function onHandlePointerDown(e: React.PointerEvent, edge: HandleEdge, origW: number, origH: number) {
+    e.stopPropagation();
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    resizeDragRef.current = { edge, startX: e.clientX, startY: e.clientY, origW, origH };
+  }
+
+  function onHandlePointerMove(e: React.PointerEvent) {
+    const drag = resizeDragRef.current;
+    if (!drag || !selectedNode || !scene) return;
+    const dx = (e.clientX - drag.startX) / zoom;
+    const dy = (e.clientY - drag.startY) / zoom;
+    const d = selectedNode.data;
+
+    if (d.type === "TileMap") {
+      const tw = d.tileWidth || 16;
+      const th = d.tileHeight || 16;
+      const newW = Math.max(1, drag.origW + (drag.edge !== "bottom" ? Math.round(dx / tw) : 0));
+      const newH = Math.max(1, drag.origH + (drag.edge !== "right" ? Math.round(dy / th) : 0));
+      if (newW !== d.mapWidthTiles || newH !== d.mapHeightTiles) {
+        props.dispatch({ type: "updateSceneNodeDataSilent", sceneId: scene.id, nodeId: selectedNode.id, data: { ...d, mapWidthTiles: newW, mapHeightTiles: newH } });
+      }
+    } else if (d.type === "CollisionShape") {
+      const newW = Math.max(1, Math.round(drag.origW + (drag.edge !== "bottom" ? dx : 0)));
+      const newH = Math.max(1, Math.round(drag.origH + (drag.edge !== "right" ? dy : 0)));
+      props.dispatch({ type: "updateSceneNodeDataSilent", sceneId: scene.id, nodeId: selectedNode.id, data: { ...d, width: newW, height: newH } });
+    } else if (d.type === "Area" && d.shape === "rect") {
+      const newW = Math.max(1, Math.round(drag.origW + (drag.edge !== "bottom" ? dx : 0)));
+      const newH = Math.max(1, Math.round(drag.origH + (drag.edge !== "right" ? dy : 0)));
+      props.dispatch({ type: "updateSceneNodeDataSilent", sceneId: scene.id, nodeId: selectedNode.id, data: { ...d, width: newW, height: newH } });
+    }
+  }
+
+  function onHandlePointerUp(e: React.PointerEvent) {
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    resizeDragRef.current = null;
+  }
+
   // Gizmo for selected node
   let gizmo: React.ReactNode = null;
   if (selectedNode && scene && selectedNode.data.type !== "Root") {
@@ -342,59 +387,46 @@ export function LevelWorkspace(props: {
     const gy = wt.y * zoom;
     const gw = bounds.w * zoom;
     const gh = bounds.h * zoom;
-    const handleSize = 7;
-    const half = Math.floor(handleSize / 2);
+    const hs = 8;
+    const hh = hs / 2;
+
+    const canResize = selectedNode.data.type === "TileMap" || selectedNode.data.type === "CollisionShape" || (selectedNode.data.type === "Area" && selectedNode.data.shape === "rect");
+    const resizeOrigW = selectedNode.data.type === "TileMap" ? selectedNode.data.mapWidthTiles : bounds.w;
+    const resizeOrigH = selectedNode.data.type === "TileMap" ? selectedNode.data.mapHeightTiles : bounds.h;
+
+    const handleStyle = (left: number, top: number, cursor: string): React.CSSProperties => ({
+      position: "absolute", left, top, width: hs, height: hs,
+      background: "#fff", border: "1.5px solid rgba(135,197,255,1)", boxSizing: "border-box",
+      cursor, pointerEvents: canResize ? "auto" : "none",
+    });
 
     gizmo = (
       <div style={{ position: "absolute", left: gx - 2, top: gy - 2, width: gw + 4, height: gh + 4, pointerEvents: "none" }}>
-        {/* Selection border */}
-        <div style={{
-          position: "absolute", inset: 0,
-          border: "1.5px solid rgba(135, 197, 255, 0.9)",
-          boxSizing: "border-box",
-        }} />
-        {/* Corner handles */}
-        {[
-          { left: -half, top: -half },
-          { left: gw + 4 - half - 1, top: -half },
-          { left: -half, top: gh + 4 - half - 1 },
-          { left: gw + 4 - half - 1, top: gh + 4 - half - 1 },
-        ].map((pos, i) => (
-          <div key={i} style={{
-            position: "absolute",
-            left: pos.left, top: pos.top,
-            width: handleSize, height: handleSize,
-            background: "#fff",
-            border: "1px solid rgba(135, 197, 255, 1)",
-            boxSizing: "border-box",
-          }} />
-        ))}
-        {/* Edge midpoint handles */}
-        {[
-          { left: (gw + 4) / 2 - half, top: -half },
-          { left: (gw + 4) / 2 - half, top: gh + 4 - half - 1 },
-          { left: -half, top: (gh + 4) / 2 - half },
-          { left: gw + 4 - half - 1, top: (gh + 4) / 2 - half },
-        ].map((pos, i) => (
-          <div key={`e${i}`} style={{
-            position: "absolute",
-            left: pos.left, top: pos.top,
-            width: handleSize, height: handleSize,
-            background: "#fff",
-            border: "1px solid rgba(135, 197, 255, 1)",
-            boxSizing: "border-box",
-          }} />
-        ))}
-        {/* Node type label */}
-        <div style={{
-          position: "absolute",
-          left: 0, top: -16,
-          fontSize: "0.6rem",
-          color: "rgba(135, 197, 255, 0.9)",
-          whiteSpace: "nowrap",
-          pointerEvents: "none",
-        }}>
+        <div style={{ position: "absolute", inset: 0, border: "1.5px solid rgba(135,197,255,0.9)", boxSizing: "border-box" }} />
+
+        {/* Right edge */}
+        <div style={handleStyle(gw + 4 - hh - 1, (gh + 4) / 2 - hh, "ew-resize")}
+          onPointerDown={(e) => onHandlePointerDown(e, "right", resizeOrigW, resizeOrigH)}
+          onPointerMove={onHandlePointerMove} onPointerUp={onHandlePointerUp} />
+        {/* Bottom edge */}
+        <div style={handleStyle((gw + 4) / 2 - hh, gh + 4 - hh - 1, "ns-resize")}
+          onPointerDown={(e) => onHandlePointerDown(e, "bottom", resizeOrigW, resizeOrigH)}
+          onPointerMove={onHandlePointerMove} onPointerUp={onHandlePointerUp} />
+        {/* Bottom-right corner */}
+        <div style={handleStyle(gw + 4 - hh - 1, gh + 4 - hh - 1, "nwse-resize")}
+          onPointerDown={(e) => onHandlePointerDown(e, "corner", resizeOrigW, resizeOrigH)}
+          onPointerMove={onHandlePointerMove} onPointerUp={onHandlePointerUp} />
+
+        {/* Non-interactive decorative handles */}
+        <div style={{ ...handleStyle(-hh, -hh, "default"), pointerEvents: "none" }} />
+        <div style={{ ...handleStyle(gw + 4 - hh - 1, -hh, "default"), pointerEvents: "none" }} />
+        <div style={{ ...handleStyle(-hh, gh + 4 - hh - 1, "default"), pointerEvents: "none" }} />
+        <div style={{ ...handleStyle((gw + 4) / 2 - hh, -hh, "default"), pointerEvents: "none" }} />
+        <div style={{ ...handleStyle(-hh, (gh + 4) / 2 - hh, "default"), pointerEvents: "none" }} />
+
+        <div style={{ position: "absolute", left: 0, top: -16, fontSize: "0.6rem", color: "rgba(135,197,255,0.9)", whiteSpace: "nowrap", pointerEvents: "none" }}>
           {selectedNode.name}
+          {selectedNode.data.type === "TileMap" && ` (${selectedNode.data.mapWidthTiles}×${selectedNode.data.mapHeightTiles})`}
         </div>
       </div>
     );
