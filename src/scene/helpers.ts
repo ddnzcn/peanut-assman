@@ -50,6 +50,8 @@ function createDefaultNodeData(type: SceneNodeType): SceneNodeData {
       return { type: "Area", shape: "rect", width: 32, height: 32, areaTag: "" };
     case "Light2D":
       return { type: "Light2D", variant: "omni", radius: 128, color: "#ffffff", intensity: 1, falloff: 1, directionAngle: 0, coneAngle: 45 };
+    case "AnimatedSprite":
+      return { type: "AnimatedSprite", spriteAnimationId: 0, flipH: false, flipV: false, tintColor: "#ffffffff" };
   }
 }
 

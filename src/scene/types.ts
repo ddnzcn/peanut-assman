@@ -5,7 +5,8 @@ export type SceneNodeType =
   | "TileMap"
   | "CollisionShape"
   | "Area"
-  | "Light2D";
+  | "Light2D"
+  | "AnimatedSprite";
 
 export type TileMapProjection =
   | "orthogonal"
@@ -98,6 +99,14 @@ export interface Light2DNodeData {
   coneAngle: number;
 }
 
+export interface AnimatedSpriteNodeData {
+  type: "AnimatedSprite";
+  spriteAnimationId: number;
+  flipH: boolean;
+  flipV: boolean;
+  tintColor: string;
+}
+
 export type SceneNodeData =
   | RootNodeData
   | Node2DData
@@ -105,7 +114,8 @@ export type SceneNodeData =
   | TileMapNodeData
   | CollisionShapeNodeData
   | AreaNodeData
-  | Light2DNodeData;
+  | Light2DNodeData
+  | AnimatedSpriteNodeData;
 
 export interface SceneNode {
   id: string;

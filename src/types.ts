@@ -20,6 +20,7 @@ export type {
   CollisionShapeKind,
   AreaShapeKind,
   Light2DVariant,
+  AnimatedSpriteNodeData,
 } from "./scene/types";
 
 export type PotSize = 64 | 128 | 256 | 512 | 1024;

@@ -1,5 +1,5 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { buildAnimatedTileLookup, resolveAnimatedTileSliceId } from "../../animation/playback";
+import { buildAnimatedTileLookup, getFrameAtTime, resolveAnimatedTileSliceId } from "../../animation/playback";
 import { getTileAt } from "../../level/editor";
 import { calculateBlob47Mask, getTerrainSetMarkerTileId } from "../../terrain";
 import type { ProjectDocument, SceneDocument, SceneNode, SliceRect, SourceImageAsset, TileMapChunk, TileMapNodeData } from "../../types";
@@ -354,6 +354,7 @@ export function renderSceneNodes(
   zoom: number,
   onInvalidate?: () => void,
   cameraPan?: { x: number; y: number },
+  animTimeMs?: number,
 ) {
   if (!canvas || !scene) return;
   const context = canvas.getContext("2d");
@@ -410,6 +411,37 @@ export function renderSceneNodes(
           context.restore();
         } else {
           context.fillStyle = "rgba(135,197,255,0.25)";
+          context.fillRect(px, py, 16 * zoom, 16 * zoom);
+        }
+      } else if (node.data.type === "AnimatedSprite") {
+        const animData = node.data;
+        let sliceId: string | undefined;
+        const anim = project.spriteAnimations.find((a) => a.id === animData.spriteAnimationId);
+        if (anim && anim.frames.length > 0) {
+          const frameIdx = animTimeMs !== undefined ? getFrameAtTime(anim.frames, animTimeMs, anim.loop) : 0;
+          sliceId = anim.frames[frameIdx].sliceId;
+        }
+        const slice = sliceId ? sliceById.get(sliceId) : null;
+        const source = slice ? sourceById.get(slice.sourceImageId) : null;
+        const image = source ? getCachedRenderImage(source.id, source.dataUrl, onInvalidate) : null;
+        if (slice && image?.complete && image.naturalWidth) {
+          context.save();
+          context.translate(px, py);
+          if (wt.rotation) context.rotate(wt.rotation * Math.PI / 180);
+          context.scale(
+            wt.scaleX * (animData.flipH ? -1 : 1),
+            wt.scaleY * (animData.flipV ? -1 : 1),
+          );
+          context.drawImage(
+            image,
+            slice.sourceRect.x, slice.sourceRect.y,
+            slice.sourceRect.width, slice.sourceRect.height,
+            0, 0,
+            slice.sourceRect.width * zoom, slice.sourceRect.height * zoom,
+          );
+          context.restore();
+        } else {
+          context.fillStyle = "rgba(197,135,255,0.25)";
           context.fillRect(px, py, 16 * zoom, 16 * zoom);
         }
       } else if (node.data.type === "CollisionShape") {
@@ -488,6 +520,7 @@ function getNodeBounds(node: SceneNode): { w: number; h: number } {
     case "Area": return { w: node.data.width, h: node.data.height };
     case "Light2D": return { w: node.data.radius * 2, h: node.data.radius * 2 };
     case "Sprite": return { w: 16, h: 16 };
+    case "AnimatedSprite": return { w: 16, h: 16 };
     default: return { w: 16, h: 16 };
   }
 }

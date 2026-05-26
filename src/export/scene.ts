@@ -11,6 +11,7 @@ const SPRITE_EXT_SIZE = 12;
 const COLLISION_EXT_SIZE = 16;
 const AREA_EXT_SIZE = 16;
 const LIGHT_EXT_SIZE = 20;
+const ANIMATED_SPRITE_EXT_SIZE = 16;
 const TILESET_DEF_SIZE = 28;
 const TILESET_REMAP_ENTRY_SIZE = 4;
 const CHUNK_DEF_SIZE = 20;
@@ -20,7 +21,7 @@ const STRING_NONE = 0xffffffff;
 
 const NODE_TYPE_MAP: Record<string, number> = {
   Root: 0, Node2D: 1, Sprite: 2, TileMap: 3,
-  CollisionShape: 4, Area: 5, Light2D: 6,
+  CollisionShape: 4, Area: 5, Light2D: 6, AnimatedSprite: 7,
 };
 
 export async function exportSceneBin(project: ProjectDocument, scene: SceneDocument): Promise<Uint8Array> {
@@ -44,7 +45,7 @@ export async function exportSceneBin(project: ProjectDocument, scene: SceneDocum
 }
 
 const NODE_TYPE_NAMES: Record<number, string> = {
-  0: "Root", 1: "Node2D", 2: "Sprite", 3: "TileMap", 4: "CollisionShape", 5: "Area", 6: "Light2D",
+  0: "Root", 1: "Node2D", 2: "Sprite", 3: "TileMap", 4: "CollisionShape", 5: "Area", 6: "Light2D", 7: "AnimatedSprite",
 };
 
 export async function exportSceneDebugJson(project: ProjectDocument, scene: SceneDocument): Promise<string> {
@@ -236,6 +237,22 @@ async function buildExportState(project: ProjectDocument, scene: SceneDocument) 
         v.setInt16(o + 14, packFixed88(d.directionAngle ?? 0), true);
         v.setInt16(o + 16, packFixed88(d.coneAngle ?? 45), true);
         v.setInt16(o + 18, 0, true);
+      };
+    } else if (node.data.type === "AnimatedSprite") {
+      extSize = ANIMATED_SPRITE_EXT_SIZE;
+      const d = node.data;
+      const anim = project.spriteAnimations.find((a) => a.id === d.spriteAnimationId);
+      const animNameHash = anim?.nameHash ?? 0;
+      const firstFrameSliceId = anim?.frames[0]?.sliceId;
+      const firstSprite = firstFrameSliceId ? project.sprites.find((s) => s.sliceId === firstFrameSliceId) : undefined;
+      const defaultSpriteId = firstSprite?.id ?? 0;
+      writeExt = (v, o) => {
+        v.setUint32(o, animNameHash, true);
+        v.setUint8(o + 4, d.flipH ? 1 : 0);
+        v.setUint8(o + 5, d.flipV ? 1 : 0);
+        v.setUint16(o + 6, 0, true);
+        v.setUint32(o + 8, parseInt(d.tintColor.replace("#", ""), 16) >>> 0, true);
+        v.setUint32(o + 12, defaultSpriteId, true);
       };
     }
 

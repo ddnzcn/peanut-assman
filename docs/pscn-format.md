@@ -72,6 +72,7 @@ Nodes are serialized in **pre-order traversal** of the scene tree. The root node
 | 4     | CollisionShape | 16 bytes |
 | 5     | Area           | 16 bytes |
 | 6     | Light2D        | 20 bytes |
+| 7     | AnimatedSprite | 16 bytes |
 
 ### Sprite Extension (12 bytes)
 
@@ -132,6 +133,17 @@ Nodes are serialized in **pre-order traversal** of the scene tree. The root node
 | 14     | i16  | directionAngle | Fixed-point 8.8 (degrees) |
 | 16     | i16  | coneAngle      | Fixed-point 8.8 (degrees, directional only) |
 | 18     | i16  | _reserved      | 0 |
+
+### AnimatedSprite Extension (16 bytes)
+
+| Offset | Type | Field           | Notes |
+|--------|------|-----------------|-------|
+| 0      | u32  | animNameHash    | FNV-1a hash of animation name, 0 = none |
+| 4      | u8   | flipH           | Horizontal flip (0/1) |
+| 5      | u8   | flipV           | Vertical flip (0/1) |
+| 6      | u16  | _pad            | Reserved |
+| 8      | u32  | tintColor       | RGBA as packed u32 |
+| 12     | u32  | defaultSpriteId | First frame sprite ID (static fallback) |
 
 ---
 

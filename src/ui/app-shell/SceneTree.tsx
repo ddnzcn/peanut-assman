@@ -11,6 +11,7 @@ import {
   Image,
   Lock,
   MapPin,
+  Play,
   Plus,
   Shield,
   Sun,
@@ -33,6 +34,7 @@ const NODE_TYPE_ICONS: Record<SceneNodeType, typeof Box> = {
   CollisionShape: Shield,
   Area: MapPin,
   Light2D: Sun,
+  AnimatedSprite: Play,
 };
 
 const NODE_TYPE_COLORS: Record<SceneNodeType, string> = {
@@ -43,6 +45,7 @@ const NODE_TYPE_COLORS: Record<SceneNodeType, string> = {
   CollisionShape: "#ff7c7c",
   Area: "#77d8ff",
   Light2D: "#ffe066",
+  AnimatedSprite: "#c587ff",
 };
 
 const ADDABLE_NODE_TYPES: SceneNodeType[] = [
@@ -52,6 +55,7 @@ const ADDABLE_NODE_TYPES: SceneNodeType[] = [
   "CollisionShape",
   "Area",
   "Light2D",
+  "AnimatedSprite",
 ];
 
 interface SceneTreeProps {

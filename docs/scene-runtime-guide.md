@@ -21,6 +21,7 @@ struct SceneNode {
         PscnCollisionShapeExt collision;
         PscnAreaExt area;
         PscnLight2DExt light;
+        PscnAnimatedSpriteExt animSprite;
     } ext;
     std::vector<SceneNode*> children;
 };

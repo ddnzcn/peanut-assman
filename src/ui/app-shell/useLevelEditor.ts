@@ -78,7 +78,7 @@ export function useLevelEditor({
   // Static canvas render
   useEffect(() => {
     if (state.editor.workspace !== "level") return;
-    if ((state.project.animatedTiles?.length ?? 0) > 0) return;
+    if ((state.project.animatedTiles?.length ?? 0) > 0 || state.project.spriteAnimations.length > 0) return;
     let cancelled = false;
     const redraw = () => {
       if (cancelled) return;
@@ -94,8 +94,8 @@ export function useLevelEditor({
 
   // RAF loop for animated tiles
   useEffect(() => {
-    const hasAnimatedTiles = (state.project.animatedTiles?.length ?? 0) > 0;
-    if (!hasAnimatedTiles || state.editor.workspace !== "level") {
+    const hasAnimContent = (state.project.animatedTiles?.length ?? 0) > 0 || state.project.spriteAnimations.length > 0;
+    if (!hasAnimContent || state.editor.workspace !== "level") {
       if (levelAnimRafRef.current !== null) {
         cancelAnimationFrame(levelAnimRafRef.current);
         levelAnimRafRef.current = null;
@@ -110,7 +110,7 @@ export function useLevelEditor({
       const useWebGL = !!webglCanvasRef.current && !!s;
       if (useWebGL) renderTilesWebGL(webglCanvasRef.current!, project, s!, zoom, levelAnimTimeRef.current);
       renderLevelCanvas(levelCanvasRef.current, project, s, zoom, levelAnimTimeRef.current, undefined, useWebGL, pan);
-      renderSceneNodes(levelCanvasRef.current, project, s, selId, zoom, undefined, pan);
+      renderSceneNodes(levelCanvasRef.current, project, s, selId, zoom, undefined, pan, levelAnimTimeRef.current);
       levelAnimRafRef.current = requestAnimationFrame(tick);
     };
     levelAnimRafRef.current = requestAnimationFrame(tick);
@@ -121,7 +121,7 @@ export function useLevelEditor({
         levelAnimStartRef.current = null;
       }
     };
-  }, [(state.project.animatedTiles?.length ?? 0), state.editor.workspace]);
+  }, [(state.project.animatedTiles?.length ?? 0), state.project.spriteAnimations.length, state.editor.workspace]);
 
   // Center viewport on scene change and window resize (NOT on zoom — zoom adjusts pan itself)
   useEffect(() => {

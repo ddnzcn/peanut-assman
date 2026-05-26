@@ -955,6 +955,7 @@ export function AppShell() {
                     <option value="CollisionShape">Collision</option>
                     <option value="Area">Area</option>
                     <option value="Light2D">Light</option>
+                    <option value="AnimatedSprite">Anim Sprite</option>
                     <option value="Node2D">Node2D</option>
                   </select>
                 )}

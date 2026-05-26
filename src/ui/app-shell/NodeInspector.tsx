@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type {
+  AnimatedSpriteNodeData,
   AreaNodeData,
   CollisionShapeNodeData,
   Light2DNodeData,
@@ -8,6 +9,7 @@ import type {
   SceneDocument,
   SceneNode,
   SliceAsset,
+  SpriteAnimation,
   SpriteNodeData,
   TileMapNodeData,
   TileMapProjection,
@@ -117,6 +119,7 @@ export function NodeInspector({ scene, node, project, dispatch }: NodeInspectorP
       {node.data.type === "CollisionShape" && <CollisionInspector data={node.data} onUpdate={(d) => updateData(d)} />}
       {node.data.type === "Area" && <AreaInspector data={node.data} onUpdate={(d) => updateData(d)} />}
       {node.data.type === "Light2D" && <LightInspector data={node.data} onUpdate={(d) => updateData(d)} />}
+      {node.data.type === "AnimatedSprite" && <AnimatedSpriteInspector data={node.data} spriteAnimations={project.spriteAnimations} onUpdate={(d) => updateData(d)} />}
     </div>
   );
 }
@@ -281,6 +284,29 @@ function LightInspector({ data, onUpdate }: { data: Light2DNodeData; onUpdate: (
           <label>Cone Angle (°) <DraftInput value={data.coneAngle ?? 45} min={1} max={180} step={1} onCommit={(v) => onUpdate({ ...data, coneAngle: v })} /></label>
         </>
       )}
+    </>
+  );
+}
+
+function AnimatedSpriteInspector({ data, spriteAnimations, onUpdate }: { data: AnimatedSpriteNodeData; spriteAnimations: SpriteAnimation[]; onUpdate: (d: AnimatedSpriteNodeData) => void }) {
+  return (
+    <>
+      <div className="inspector-section-label">Animated Sprite</div>
+      <label>
+        Animation
+        <select value={data.spriteAnimationId || ""} onChange={(e) => onUpdate({ ...data, spriteAnimationId: e.target.value ? Number(e.target.value) : 0 })}>
+          <option value="">-- none --</option>
+          {spriteAnimations.map((anim) => (
+            <option key={anim.id} value={anim.id}>{anim.name}</option>
+          ))}
+        </select>
+      </label>
+      <label><input type="checkbox" checked={data.flipH} onChange={(e) => onUpdate({ ...data, flipH: e.target.checked })} /> Flip H</label>
+      <label><input type="checkbox" checked={data.flipV} onChange={(e) => onUpdate({ ...data, flipV: e.target.checked })} /> Flip V</label>
+      <label>
+        Tint
+        <input type="color" value={data.tintColor.slice(0, 7)} onChange={(e) => onUpdate({ ...data, tintColor: e.target.value })} />
+      </label>
     </>
   );
 }
