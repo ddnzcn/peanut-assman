@@ -104,9 +104,10 @@ export async function buildAtlasFromProject(project: AppState["project"]): Promi
 
   const runtimeAnimTiles: RuntimeAnimTileData[] = (project.animatedTiles ?? [])
     .flatMap((animTile) => {
-      const baseTile = tileByTileId.get(animTile.baseTileId);
-      if (!baseTile) return [];
-      const baseSpriteIndex = spriteIndexById.get(baseTile.spriteId);
+      if (animTile.frames.length === 0) return [];
+      const firstFrameSprite = spriteBySliceId.get(animTile.frames[0].sliceId);
+      if (!firstFrameSprite) return [];
+      const baseSpriteIndex = spriteIndexById.get(firstFrameSprite.id);
       if (baseSpriteIndex === undefined) return [];
 
       const frames = animTile.frames.flatMap((f) => {

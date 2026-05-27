@@ -143,16 +143,22 @@ export function resolveRuntimeSpriteIdForCell(
     }
   }
 
-  let lookupTileId = cell.tileId;
   const animTile = project.animatedTiles?.find((at) => at.id === cell.tileId);
-  if (animTile) lookupTileId = animTile.baseTileId;
+  if (animTile && animTile.frames.length > 0) {
+    const firstFrame = animTile.frames[0];
+    const sprite = spriteBySliceId.get(firstFrame.sliceId);
+    if (sprite) {
+      return { spriteId: sprite.id, exportKey: `animtile:${animTile.id}` };
+    }
+    return null;
+  }
 
-  const tile = tileById.get(lookupTileId);
+  const tile = tileById.get(cell.tileId);
   if (!tile) return null;
   const sprite = spriteBySliceId.get(tile.sliceId);
   return {
     spriteId: sprite?.id ?? tile.spriteId,
-    exportKey: `tile:${lookupTileId}`,
+    exportKey: `tile:${tile.tileId}`,
   };
 }
 
