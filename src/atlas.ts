@@ -841,16 +841,17 @@ function buildMetadata(
   view.setUint16(16, pages.length, true);
   view.setUint16(18, sortedPlacements.length, true);
   view.setUint16(20, animations.length, true);
-  view.setUint16(22, options.includeHashTable ? 1 : 0, true);
-  view.setUint32(24, pageTableOffset, true);
-  view.setUint32(28, spriteTableOffset, true);
-  view.setUint32(32, animTableOffset, true);
-  view.setUint32(36, frameTableOffset, true);
-  view.setUint32(40, hashTableOffset, true);
-  view.setUint16(44, animTiles.length, true);
-  view.setUint16(46, 0, true); // reserved0
-  view.setUint32(48, animTileTableOffset, true);
-  view.setUint32(52, animTileFrameTableOffset, true);
+  view.setUint16(22, totalFrameCount, true);
+  view.setUint16(24, animTiles.length, true);
+  view.setUint16(26, totalAnimTileFrameCount, true);
+  view.setUint16(28, hashEntries.length, true);
+  view.setUint16(30, 0, true);
+  view.setUint32(32, pageTableOffset, true);
+  view.setUint32(36, spriteTableOffset, true);
+  view.setUint32(40, animTableOffset, true);
+  view.setUint32(44, frameTableOffset, true);
+  view.setUint32(48, hashTableOffset, true);
+  view.setUint32(52, animTileTableOffset, true);
 
   const debug = JSON.stringify(
     {
