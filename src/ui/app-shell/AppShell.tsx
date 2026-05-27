@@ -553,7 +553,7 @@ export function AppShell() {
               <button
                 className="app-menu-item primary app-menu-item-primary"
                 onClick={exportLevel}
-                disabled={!tileMapData}
+                disabled={!scene}
               >
                 <Download size={14} />
                 <span>Export Level</span>
