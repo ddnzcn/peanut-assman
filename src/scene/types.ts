@@ -101,7 +101,7 @@ export interface Light2DNodeData {
 
 export interface AnimatedSpriteNodeData {
   type: "AnimatedSprite";
-  spriteAnimationId: number;
+  spriteAnimationIds: number[];
   flipH: boolean;
   flipV: boolean;
   tintColor: string;

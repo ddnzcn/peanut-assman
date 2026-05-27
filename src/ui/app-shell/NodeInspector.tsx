@@ -289,18 +289,24 @@ function LightInspector({ data, onUpdate }: { data: Light2DNodeData; onUpdate: (
 }
 
 function AnimatedSpriteInspector({ data, spriteAnimations, onUpdate }: { data: AnimatedSpriteNodeData; spriteAnimations: SpriteAnimation[]; onUpdate: (d: AnimatedSpriteNodeData) => void }) {
+  const ids = data.spriteAnimationIds;
+  function toggleAnim(id: number) {
+    const next = ids.includes(id) ? ids.filter((i) => i !== id) : [...ids, id];
+    onUpdate({ ...data, spriteAnimationIds: next });
+  }
   return (
     <>
       <div className="inspector-section-label">Animated Sprite</div>
-      <label>
-        Animation
-        <select value={data.spriteAnimationId || ""} onChange={(e) => onUpdate({ ...data, spriteAnimationId: e.target.value ? Number(e.target.value) : 0 })}>
-          <option value="">-- none --</option>
-          {spriteAnimations.map((anim) => (
-            <option key={anim.id} value={anim.id}>{anim.name}</option>
-          ))}
-        </select>
-      </label>
+      <div className="inspector-section-label" style={{ fontSize: "0.7rem", opacity: 0.7 }}>Animations ({ids.length})</div>
+      <div style={{ maxHeight: 120, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+        {spriteAnimations.length === 0 && <span style={{ fontSize: "0.7rem", opacity: 0.5 }}>No animations defined</span>}
+        {spriteAnimations.map((anim) => (
+          <label key={anim.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.75rem" }}>
+            <input type="checkbox" checked={ids.includes(anim.id)} onChange={() => toggleAnim(anim.id)} />
+            {anim.name}
+          </label>
+        ))}
+      </div>
       <label><input type="checkbox" checked={data.flipH} onChange={(e) => onUpdate({ ...data, flipH: e.target.checked })} /> Flip H</label>
       <label><input type="checkbox" checked={data.flipV} onChange={(e) => onUpdate({ ...data, flipV: e.target.checked })} /> Flip V</label>
       <label>

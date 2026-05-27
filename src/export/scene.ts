@@ -11,7 +11,7 @@ const SPRITE_EXT_SIZE = 12;
 const COLLISION_EXT_SIZE = 16;
 const AREA_EXT_SIZE = 16;
 const LIGHT_EXT_SIZE = 20;
-const ANIMATED_SPRITE_EXT_SIZE = 16;
+// AnimatedSprite ext is variable: 12 + 4 * animCount (aligned to 4)
 const TILESET_DEF_SIZE = 28;
 const TILESET_REMAP_ENTRY_SIZE = 4;
 const CHUNK_DEF_SIZE = 20;
@@ -239,20 +239,26 @@ async function buildExportState(project: ProjectDocument, scene: SceneDocument) 
         v.setInt16(o + 18, 0, true);
       };
     } else if (node.data.type === "AnimatedSprite") {
-      extSize = ANIMATED_SPRITE_EXT_SIZE;
       const d = node.data;
-      const anim = project.spriteAnimations.find((a) => a.id === d.spriteAnimationId);
-      const animNameHash = anim?.nameHash ?? 0;
-      const firstFrameSliceId = anim?.frames[0]?.sliceId;
+      const resolvedAnims = d.spriteAnimationIds
+        .map((id) => project.spriteAnimations.find((a) => a.id === id))
+        .filter((a): a is NonNullable<typeof a> => !!a);
+      const animCount = resolvedAnims.length;
+      extSize = 12 + animCount * 4;
+      const firstAnim = resolvedAnims[0];
+      const firstFrameSliceId = firstAnim?.frames[0]?.sliceId;
       const firstSprite = firstFrameSliceId ? project.sprites.find((s) => s.sliceId === firstFrameSliceId) : undefined;
       const defaultSpriteId = firstSprite?.id ?? 0;
       writeExt = (v, o) => {
-        v.setUint32(o, animNameHash, true);
-        v.setUint8(o + 4, d.flipH ? 1 : 0);
-        v.setUint8(o + 5, d.flipV ? 1 : 0);
-        v.setUint16(o + 6, 0, true);
-        v.setUint32(o + 8, parseInt(d.tintColor.replace("#", ""), 16) >>> 0, true);
-        v.setUint32(o + 12, defaultSpriteId, true);
+        v.setUint8(o, animCount);
+        v.setUint8(o + 1, d.flipH ? 1 : 0);
+        v.setUint8(o + 2, d.flipV ? 1 : 0);
+        v.setUint8(o + 3, 0);
+        v.setUint32(o + 4, parseInt(d.tintColor.replace("#", ""), 16) >>> 0, true);
+        v.setUint32(o + 8, defaultSpriteId, true);
+        for (let i = 0; i < animCount; i++) {
+          v.setUint32(o + 12 + i * 4, resolvedAnims[i].nameHash, true);
+        }
       };
     }
 

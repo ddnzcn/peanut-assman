@@ -416,7 +416,8 @@ export function renderSceneNodes(
       } else if (node.data.type === "AnimatedSprite") {
         const animData = node.data;
         let sliceId: string | undefined;
-        const anim = project.spriteAnimations.find((a) => a.id === animData.spriteAnimationId);
+        const firstAnimId = animData.spriteAnimationIds[0];
+        const anim = firstAnimId !== undefined ? project.spriteAnimations.find((a) => a.id === firstAnimId) : undefined;
         if (anim && anim.frames.length > 0) {
           const frameIdx = animTimeMs !== undefined ? getFrameAtTime(anim.frames, animTimeMs, anim.loop) : 0;
           sliceId = anim.frames[frameIdx].sliceId;

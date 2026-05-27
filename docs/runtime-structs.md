@@ -74,14 +74,15 @@ struct PscnSpriteExt {
 static_assert(sizeof(PscnSpriteExt) == 12);
 
 struct PscnAnimatedSpriteExt {
-    uint32_t animNameHash;      // FNV-1a of animation name, 0 = none
+    uint8_t  animCount;         // number of animations
     uint8_t  flipH;
     uint8_t  flipV;
-    uint16_t _pad;
+    uint8_t  _pad;
     uint32_t tintColor;         // RGBA packed
     uint32_t defaultSpriteId;   // first frame sprite for static fallback
+    // followed by animCount * uint32_t animNameHashes (FNV-1a)
 };
-static_assert(sizeof(PscnAnimatedSpriteExt) == 16);
+// variable size: 12 + animCount * 4
 
 struct PscnTileMapExt {
     uint16_t tileWidth;

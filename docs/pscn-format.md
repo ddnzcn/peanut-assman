@@ -72,7 +72,7 @@ Nodes are serialized in **pre-order traversal** of the scene tree. The root node
 | 4     | CollisionShape | 16 bytes |
 | 5     | Area           | 16 bytes |
 | 6     | Light2D        | 20 bytes |
-| 7     | AnimatedSprite | 16 bytes |
+| 7     | AnimatedSprite | 12 + 4*N bytes |
 
 ### Sprite Extension (12 bytes)
 
@@ -134,16 +134,17 @@ Nodes are serialized in **pre-order traversal** of the scene tree. The root node
 | 16     | i16  | coneAngle      | Fixed-point 8.8 (degrees, directional only) |
 | 18     | i16  | _reserved      | 0 |
 
-### AnimatedSprite Extension (16 bytes)
+### AnimatedSprite Extension (12 + 4*N bytes)
 
 | Offset | Type | Field           | Notes |
 |--------|------|-----------------|-------|
-| 0      | u32  | animNameHash    | FNV-1a hash of animation name, 0 = none |
-| 4      | u8   | flipH           | Horizontal flip (0/1) |
-| 5      | u8   | flipV           | Vertical flip (0/1) |
-| 6      | u16  | _pad            | Reserved |
-| 8      | u32  | tintColor       | RGBA as packed u32 |
-| 12     | u32  | defaultSpriteId | First frame sprite ID (static fallback) |
+| 0      | u8   | animCount       | Number of animations (N) |
+| 1      | u8   | flipH           | Horizontal flip (0/1) |
+| 2      | u8   | flipV           | Vertical flip (0/1) |
+| 3      | u8   | _pad            | Reserved |
+| 4      | u32  | tintColor       | RGBA as packed u32 |
+| 8      | u32  | defaultSpriteId | First frame sprite ID (static fallback) |
+| 12     | u32[N] | animNameHashes | FNV-1a hashes of animation names |
 
 ---
 
