@@ -742,17 +742,12 @@ function buildMetadata(
   let atlasDataOffset = 0;
   pages.forEach((page, index) => {
     const offset = pageTableOffset + index * PAGE_SIZE;
-    view.setUint32(offset + 0, atlasDataOffset, true);
-    view.setUint32(offset + 4, page.data.length, true);
-    view.setUint16(offset + 8, page.width, true);
-    view.setUint16(offset + 10, page.height, true);
-    view.setUint8(offset + 12, 0);
-    view.setUint8(offset + 13, 0);
-    view.setUint16(offset + 14, 0, true);
-    view.setUint16(offset + 16, Math.ceil(page.width / 64), true);
-    view.setUint16(offset + 18, 0, true);
-    view.setUint32(offset + 20, 0, true);
-    view.setUint32(offset + 24, 0, true);
+    view.setUint16(offset + 0, index, true);
+    view.setUint16(offset + 2, page.width, true);
+    view.setUint16(offset + 4, page.height, true);
+    view.setUint32(offset + 6, atlasDataOffset, true);
+    view.setUint32(offset + 10, page.data.length, true);
+    // bytes 14-29: reserved (zero-filled by default)
     atlasDataOffset += page.data.length;
   });
 
