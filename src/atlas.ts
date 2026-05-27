@@ -21,6 +21,12 @@ const ANIM_TILE_SIZE = 8;
 const ANIM_TILE_FRAME_SIZE = 8;
 const HASH_SIZE = 8;
 
+function nextPow2(n: number): number {
+  let v = n - 1;
+  v |= v >> 1; v |= v >> 2; v |= v >> 4; v |= v >> 8; v |= v >> 16;
+  return v + 1;
+}
+
 export interface RuntimeAnimData {
   nameHash: number;
   loop: boolean;
@@ -698,14 +704,19 @@ function buildMetadata(
   const sortedPlacements = [...placements].sort(
     (left, right) => left.sprite.id - right.sprite.id,
   );
-  const hashEntries = options.includeHashTable
-    ? [...sortedPlacements]
-        .map((placement, index) => ({
-          nameHash: placement.sprite.nameHash,
-          spriteIndex: index,
-        }))
-        .sort((left, right) => left.nameHash - right.nameHash)
-    : [];
+  const hashTableSize = options.includeHashTable && sortedPlacements.length > 0
+    ? nextPow2(Math.max(4, sortedPlacements.length * 2))
+    : 0;
+  const hashTable = new Array<{ nameHash: number; spriteIndex: number }>(hashTableSize);
+  for (let i = 0; i < hashTableSize; i++) hashTable[i] = { nameHash: 0, spriteIndex: 0 };
+  if (hashTableSize > 0) {
+    const mask = hashTableSize - 1;
+    sortedPlacements.forEach((placement, index) => {
+      let slot = placement.sprite.nameHash & mask;
+      while (hashTable[slot].nameHash !== 0) slot = (slot + 1) & mask;
+      hashTable[slot] = { nameHash: placement.sprite.nameHash, spriteIndex: index };
+    });
+  }
 
   const payloadCrc32 = crc32(atlasBin);
   const pageTableOffset = align(HEADER_SIZE, 4);
@@ -729,10 +740,10 @@ function buildMetadata(
       ? animTileFrameTableOffset + totalAnimTileFrameCount * ANIM_TILE_FRAME_SIZE
       : endOfFrameTable;
   const hashTableOffset =
-    hashEntries.length > 0 ? align(endOfAnimTileFrameTable, 4) : 0;
+    hashTable.length > 0 ? align(endOfAnimTileFrameTable, 4) : 0;
   const fileSize = align(
-    hashEntries.length > 0
-      ? hashTableOffset + hashEntries.length * HASH_SIZE
+    hashTable.length > 0
+      ? hashTableOffset + hashTable.length * HASH_SIZE
       : endOfAnimTileFrameTable,
     4,
   );
@@ -822,7 +833,7 @@ function buildMetadata(
     });
   });
 
-  hashEntries.forEach((entry, index) => {
+  hashTable.forEach((entry, index) => {
     const offset = hashTableOffset + index * HASH_SIZE;
     view.setUint32(offset + 0, entry.nameHash, true);
     view.setUint32(offset + 4, entry.spriteIndex, true);
@@ -839,7 +850,7 @@ function buildMetadata(
   view.setUint16(22, totalFrameCount, true);
   view.setUint16(24, animTiles.length, true);
   view.setUint16(26, totalAnimTileFrameCount, true);
-  view.setUint16(28, hashEntries.length, true);
+  view.setUint16(28, hashTable.length, true);
   view.setUint16(30, 0, true);
   view.setUint32(32, pageTableOffset, true);
   view.setUint32(36, spriteTableOffset, true);
@@ -888,7 +899,7 @@ function buildMetadata(
         pivotX: placement.sprite.pivotX,
         pivotY: placement.sprite.pivotY,
       })),
-      hashTable: hashEntries,
+      hashTable: hashTable,
     },
     null,
     2,
