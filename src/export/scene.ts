@@ -158,7 +158,7 @@ async function buildExportState(project: ProjectDocument, scene: SceneDocument) 
           const tileY = chunk.chunkY * tm.chunkHeightTiles + Math.floor(tileIndex / tm.chunkWidthTiles);
           if (tile.tileId === 0 || tileX >= tm.mapWidthTiles || tileY >= tm.mapHeightTiles) return { tileId: 0, flags: 0 };
           const resolved = resolveRuntimeSpriteIdForCell(project, catalog, tm, tileX, tileY);
-          if (!resolved) return tile;
+          if (!resolved) return { tileId: 0, flags: 0 };
           const exportTileId = registerExportTile(resolved.exportKey, resolved.spriteId);
           return { ...tile, tileId: exportTileId };
         });

@@ -143,12 +143,16 @@ export function resolveRuntimeSpriteIdForCell(
     }
   }
 
-  const tile = tileById.get(cell.tileId);
+  let lookupTileId = cell.tileId;
+  const animTile = project.animatedTiles?.find((at) => at.id === cell.tileId);
+  if (animTile) lookupTileId = animTile.baseTileId;
+
+  const tile = tileById.get(lookupTileId);
   if (!tile) return null;
   const sprite = spriteBySliceId.get(tile.sliceId);
   return {
     spriteId: sprite?.id ?? tile.spriteId,
-    exportKey: `tile:${tile.tileId}`,
+    exportKey: `tile:${lookupTileId}`,
   };
 }
 
