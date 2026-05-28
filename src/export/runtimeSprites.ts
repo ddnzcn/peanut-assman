@@ -153,7 +153,7 @@ export function resolveRuntimeSpriteIdForCell(
     }
   }
 
-  const animTile = project.animatedTiles?.find((at) => at.id === cell.tileId);
+  const animTile = project.animatedTiles?.find((at) => at.baseTileId === cell.tileId);
   if (animTile && animTile.frames.length > 0) {
     const firstFrame = animTile.frames[0];
     const sprite = spriteBySliceId.get(firstFrame.sliceId);
