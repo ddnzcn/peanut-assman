@@ -42,9 +42,19 @@ export async function buildRuntimeSpriteCatalog(project: ProjectDocument): Promi
   const tileById = new Map(project.tiles.map((tile) => [tile.tileId, tile]));
   const terrainTileToSet = buildTerrainTileToSetMap(project.terrainSets);
 
+  // Slice IDs referenced by animations/animated tiles must be in the atlas
+  // regardless of their includeInAtlas flag, otherwise frames can't render.
+  const animationSliceIds = new Set<string>();
+  for (const animTile of project.animatedTiles ?? []) {
+    for (const frame of animTile.frames) animationSliceIds.add(frame.sliceId);
+  }
+  for (const anim of project.spriteAnimations ?? []) {
+    for (const frame of anim.frames) animationSliceIds.add(frame.sliceId);
+  }
+
   const imports: ImportSprite[] = [];
   const includedSprites = [...project.sprites]
-    .filter((sprite) => sprite.includeInAtlas)
+    .filter((sprite) => sprite.includeInAtlas || animationSliceIds.has(sprite.sliceId))
     .sort((left, right) => left.id - right.id);
 
   for (const sprite of includedSprites) {
