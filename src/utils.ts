@@ -61,6 +61,13 @@ export function downloadBlob(blob: Blob, fileName: string): void {
   URL.revokeObjectURL(url);
 }
 
+type WritableHandle = {
+  createWritable: () => Promise<{
+    write: (data: Blob) => Promise<void>;
+    close: () => Promise<void>;
+  }>;
+};
+
 type SavePickerWindow = Window & {
   showSaveFilePicker?: (options?: {
     suggestedName?: string;
@@ -68,11 +75,11 @@ type SavePickerWindow = Window & {
       description?: string;
       accept: Record<string, string[]>;
     }>;
+  }) => Promise<WritableHandle>;
+  showDirectoryPicker?: (options?: {
+    mode?: "read" | "readwrite";
   }) => Promise<{
-    createWritable: () => Promise<{
-      write: (data: Blob) => Promise<void>;
-      close: () => Promise<void>;
-    }>;
+    getFileHandle: (name: string, options?: { create?: boolean }) => Promise<WritableHandle>;
   }>;
 };
 
@@ -95,6 +102,38 @@ export async function saveBlobWithPicker(
   const writable = await handle.createWritable();
   await writable.write(blob);
   await writable.close();
+}
+
+export interface OutputFile {
+  blob: Blob;
+  fileName: string;
+}
+
+// Prompts once for a destination folder, then writes all files there.
+// Falls back to one save dialog per file (or auto-download) when the
+// directory picker isn't supported.
+export async function saveFilesToDirectory(files: OutputFile[]): Promise<void> {
+  const pickerWindow = window as SavePickerWindow;
+  if (pickerWindow.showDirectoryPicker) {
+    const dir = await pickerWindow.showDirectoryPicker({ mode: "readwrite" });
+    for (const file of files) {
+      const handle = await dir.getFileHandle(file.fileName, { create: true });
+      const writable = await handle.createWritable();
+      await writable.write(file.blob);
+      await writable.close();
+    }
+    return;
+  }
+  for (const file of files) {
+    if (pickerWindow.showSaveFilePicker) {
+      const handle = await pickerWindow.showSaveFilePicker({ suggestedName: file.fileName });
+      const writable = await handle.createWritable();
+      await writable.write(file.blob);
+      await writable.close();
+    } else {
+      downloadBlob(file.blob, file.fileName);
+    }
+  }
 }
 
 export function formatBytes(value: number): string {

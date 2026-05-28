@@ -10,7 +10,7 @@ import type {
   SourceImageAsset,
   TilesetTileAsset,
 } from "../../types";
-import { clamp, fileNameBase, fnv1a32, saveBlobWithPicker } from "../../utils";
+import { clamp, fileNameBase, fnv1a32, saveBlobWithPicker, saveFilesToDirectory, type OutputFile } from "../../utils";
 import { buildAtlasFromProject } from "../../model/selectors";
 import { useAtlasEditor } from "./useAtlasEditor";
 import { useLevelEditor } from "./useLevelEditor";
@@ -480,26 +480,14 @@ export function useAppShellController() {
     const packedAtlas = await buildAtlasFromProject(state.project);
     if (!packedAtlas) return;
     try {
-      await saveBlobWithPicker(
-        new Blob([new Uint8Array(packedAtlas.atlasBin)], { type: "application/octet-stream" }),
-        "atlas.bin",
-        "Atlas Binary",
-        { "application/octet-stream": [".bin"] },
-      );
-      await saveBlobWithPicker(
-        new Blob([new Uint8Array(packedAtlas.atlasMetaBin)], { type: "application/octet-stream" }),
-        "atlas.meta.bin",
-        "Atlas Metadata",
-        { "application/octet-stream": [".bin"] },
-      );
+      const files: OutputFile[] = [
+        { blob: new Blob([new Uint8Array(packedAtlas.atlasBin)], { type: "application/octet-stream" }), fileName: "atlas.bin" },
+        { blob: new Blob([new Uint8Array(packedAtlas.atlasMetaBin)], { type: "application/octet-stream" }), fileName: "atlas.meta.bin" },
+      ];
       if (state.project.atlasSettings.includeDebugJson) {
-        await saveBlobWithPicker(
-          new Blob([packedAtlas.atlasDebugJson], { type: "application/json" }),
-          "atlas.debug.json",
-          "Atlas Debug JSON",
-          { "application/json": [".json"] },
-        );
+        files.push({ blob: new Blob([packedAtlas.atlasDebugJson], { type: "application/json" }), fileName: "atlas.debug.json" });
       }
+      await saveFilesToDirectory(files);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setError(error instanceof Error ? error.message : "Failed to export atlas.");
@@ -510,18 +498,11 @@ export function useAppShellController() {
     if (!scene) return;
     try {
       const bytes = await exportSceneBin(state.project, scene);
-      await saveBlobWithPicker(
-        new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" }),
-        `${scene.name}.pscn.bin`,
-        "Scene Binary",
-        { "application/octet-stream": [".bin"] },
-      );
-      await saveBlobWithPicker(
-        new Blob([await exportSceneDebugJson(state.project, scene)], { type: "application/json" }),
-        `${scene.name}.debug.json`,
-        "Scene Debug JSON",
-        { "application/json": [".json"] },
-      );
+      const debugJson = await exportSceneDebugJson(state.project, scene);
+      await saveFilesToDirectory([
+        { blob: new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" }), fileName: `${scene.name}.pscn.bin` },
+        { blob: new Blob([debugJson], { type: "application/json" }), fileName: `${scene.name}.debug.json` },
+      ]);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setError(error instanceof Error ? error.message : "Failed to export scene.");
