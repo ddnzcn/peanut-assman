@@ -357,6 +357,78 @@ export function LevelWorkspace(props: {
   const rotationDragRef = useRef<{ centerX: number; centerY: number; startAngle: number; origRotation: number } | null>(null);
   const gizmoContainerRef = useRef<HTMLDivElement>(null);
 
+  // Polyline point editor state
+  const polyDragRef = useRef<{ pointIndex: number; startClientX: number; startClientY: number; origX: number; origY: number } | null>(null);
+
+  function onPolyHandlePointerDown(e: React.PointerEvent, pointIndex: number, origX: number, origY: number) {
+    if (!selectedNode || !scene) return;
+    if (e.altKey) {
+      // Remove point (enforce minimums)
+      e.stopPropagation();
+      e.preventDefault();
+      const d = selectedNode.data;
+      if (d.type === "Path2D" || d.type === "NavRegion2D") {
+        const min = d.type === "NavRegion2D" ? 3 : 2;
+        if (d.points.length <= min) return;
+        const nextPoints = d.points.filter((_, i) => i !== pointIndex);
+        props.dispatch({ type: "updateSceneNodeData", sceneId: scene.id, nodeId: selectedNode.id, data: { ...d, points: nextPoints } });
+      }
+      return;
+    }
+    e.stopPropagation();
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    polyDragRef.current = { pointIndex, startClientX: e.clientX, startClientY: e.clientY, origX, origY };
+  }
+
+  function onPolyHandlePointerMove(e: React.PointerEvent) {
+    const drag = polyDragRef.current;
+    if (!drag || !selectedNode || !scene) return;
+    const d = selectedNode.data;
+    if (d.type !== "Path2D" && d.type !== "NavRegion2D") return;
+    let dx = (e.clientX - drag.startClientX) / zoom;
+    let dy = (e.clientY - drag.startClientY) / zoom;
+    let nx = drag.origX + dx;
+    let ny = drag.origY + dy;
+    if (e.ctrlKey || e.metaKey) {
+      const g = 16;
+      nx = Math.round(nx / g) * g;
+      ny = Math.round(ny / g) * g;
+    }
+    const nextPoints = d.points.map((p, i) => i === drag.pointIndex ? { x: nx, y: ny } : p);
+    props.dispatch({ type: "updateSceneNodeDataSilent", sceneId: scene.id, nodeId: selectedNode.id, data: { ...d, points: nextPoints } });
+  }
+
+  function onPolyHandlePointerUp(e: React.PointerEvent) {
+    if (polyDragRef.current) {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      polyDragRef.current = null;
+    }
+  }
+
+  function onPolySegmentClick(e: React.PointerEvent, insertIndex: number) {
+    if (!e.shiftKey) return;
+    if (!selectedNode || !scene) return;
+    const d = selectedNode.data;
+    if (d.type !== "Path2D" && d.type !== "NavRegion2D") return;
+    e.stopPropagation();
+    e.preventDefault();
+    // Compute click point in node-local coordinates
+    const wt = getWorldTransform(scene.root, selectedNode.id);
+    const stageRect = props.stageRef.current?.getBoundingClientRect();
+    if (!stageRect) return;
+    const style = props.stageRef.current ? window.getComputedStyle(props.stageRef.current) : null;
+    const padL = style ? parseFloat(style.paddingLeft) || 0 : 0;
+    const padT = style ? parseFloat(style.paddingTop) || 0 : 0;
+    const stageX = e.clientX - stageRect.left - padL - props.levelPan.x;
+    const stageY = e.clientY - stageRect.top - padT - props.levelPan.y;
+    const localX = stageX / zoom - wt.x;
+    const localY = stageY / zoom - wt.y;
+    const nextPoints = [...d.points];
+    nextPoints.splice(insertIndex, 0, { x: localX, y: localY });
+    props.dispatch({ type: "updateSceneNodeData", sceneId: scene.id, nodeId: selectedNode.id, data: { ...d, points: nextPoints } });
+  }
+
   function onHandlePointerDown(e: React.PointerEvent, edge: HandleEdge, origW: number, origH: number) {
     e.stopPropagation();
     e.preventDefault();
@@ -498,6 +570,68 @@ export function LevelWorkspace(props: {
     );
   }
 
+  // Polyline overlay for Path2D / NavRegion2D
+  let polylineOverlay: React.ReactNode = null;
+  if (selectedNode && scene && (selectedNode.data.type === "Path2D" || selectedNode.data.type === "NavRegion2D")) {
+    const wt = getWorldTransform(scene.root, selectedNode.id);
+    const pts = selectedNode.data.points;
+    const closed = selectedNode.data.type === "NavRegion2D" || (selectedNode.data.type === "Path2D" && selectedNode.data.closed);
+    const handleSize = 10;
+    const half = handleSize / 2;
+    const segmentCount = closed ? pts.length : pts.length - 1;
+    polylineOverlay = (
+      <div style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}>
+        {Array.from({ length: segmentCount }, (_, i) => {
+          const a = pts[i];
+          const b = pts[(i + 1) % pts.length];
+          const ax = (wt.x + a.x) * zoom;
+          const ay = (wt.y + a.y) * zoom;
+          const bx = (wt.x + b.x) * zoom;
+          const by = (wt.y + b.y) * zoom;
+          const dx = bx - ax;
+          const dy = by - ay;
+          const len = Math.hypot(dx, dy);
+          if (len < 1) return null;
+          const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+          return (
+            <div
+              key={`seg-${i}`}
+              title="Shift-click to add a point"
+              style={{
+                position: "absolute", left: ax, top: ay - 4,
+                width: len, height: 8,
+                transformOrigin: "0 4px",
+                transform: `rotate(${angle}deg)`,
+                pointerEvents: "auto", cursor: "copy",
+              }}
+              onPointerDown={(e) => onPolySegmentClick(e, i + 1)}
+            />
+          );
+        })}
+        {pts.map((p, i) => {
+          const left = (wt.x + p.x) * zoom - half;
+          const top = (wt.y + p.y) * zoom - half;
+          return (
+            <div
+              key={`pt-${i}`}
+              title="Drag to move, alt-click to remove"
+              style={{
+                position: "absolute", left, top,
+                width: handleSize, height: handleSize,
+                background: "#fff", border: "1.5px solid rgba(135,255,135,1)",
+                boxSizing: "border-box", cursor: "grab", pointerEvents: "auto",
+                borderRadius: 2,
+              }}
+              onPointerDown={(e) => onPolyHandlePointerDown(e, i, p.x, p.y)}
+              onPointerMove={onPolyHandlePointerMove}
+              onPointerUp={onPolyHandlePointerUp}
+            />
+          );
+        })}
+      </div>
+    );
+  }
+
   const hasContent = scene !== null;
 
   return (
@@ -550,6 +684,7 @@ export function LevelWorkspace(props: {
                 </div>
               )}
               {gizmo}
+              {polylineOverlay}
             </div>
           </div>
         </div>
