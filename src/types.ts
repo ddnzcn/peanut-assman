@@ -21,6 +21,16 @@ export type {
   AreaShapeKind,
   Light2DVariant,
   AnimatedSpriteNodeData,
+  Camera2DNodeData,
+  SpawnerNodeData,
+  TimerNodeData,
+  VisibilityNotifierNodeData,
+  DecalBlendMode,
+  DecalNodeData,
+  PathPoint,
+  Path2DNodeData,
+  PathFollow2DNodeData,
+  NavRegion2DNodeData,
 } from "./scene/types";
 
 export type PotSize = 64 | 128 | 256 | 512 | 1024;

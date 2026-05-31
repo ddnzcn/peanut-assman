@@ -37,6 +37,15 @@ enum PscnNodeType : uint8_t {
     NODE_COLLISION_SHAPE = 4,
     NODE_AREA            = 5,
     NODE_LIGHT2D         = 6,
+    NODE_ANIMATED_SPRITE = 7,
+    NODE_CAMERA2D        = 8,
+    NODE_SPAWNER         = 9,
+    NODE_PATH2D          = 10,
+    NODE_PATH_FOLLOW2D   = 11,
+    NODE_TIMER           = 12,
+    NODE_DECAL           = 13,
+    NODE_VISIBILITY_NOTIFIER = 14,
+    NODE_NAV_REGION2D    = 15,
 };
 
 struct PscnNodeBase {
@@ -60,7 +69,7 @@ struct PscnNodeBase {
     int16_t  parallaxX;            // fixed-point 8.8 (256 = 1.0)
     int16_t  parallaxY;
     uint16_t extSize;
-    uint8_t  reserved[8];
+    uint8_t  reserved[6];
 };
 static_assert(sizeof(PscnNodeBase) == 64);
 
@@ -135,6 +144,88 @@ struct PscnLight2DExt {
 };
 static_assert(sizeof(PscnLight2DExt) == 20);
 
+struct PscnCamera2DExt {
+    int16_t  zoom;              // fixed-point 8.8
+    int16_t  smoothingSpeed;    // fixed-point 8.8
+    uint16_t flags;             // bit 0: isCurrent, bit 1: useBounds
+    uint16_t _pad;
+    uint32_t followTargetHash;  // FNV-1a, 0 = none
+    int16_t  boundsLeft;
+    int16_t  boundsTop;
+    int16_t  boundsRight;
+    int16_t  boundsBottom;
+    uint32_t _reserved;
+};
+static_assert(sizeof(PscnCamera2DExt) == 24);
+
+struct PscnSpawnerExt {
+    uint32_t sceneNameHash;
+    uint16_t spawnIntervalMs;   // 0 = manual
+    uint16_t maxAlive;          // 0 = unlimited
+    uint16_t flags;             // bit 0: autoStart
+    uint16_t _pad;
+    uint32_t spawnAreaRadius;   // fixed-point 16.16
+};
+static_assert(sizeof(PscnSpawnerExt) == 16);
+
+struct PscnPath2DExt {
+    uint16_t pointCount;
+    uint16_t flags;             // bit 0: closed
+    uint32_t color;             // RGBA preview
+    // followed by pointCount * { int32_t x; int32_t y; } (fixed-point 16.16)
+};
+// variable size: 8 + pointCount * 8
+
+struct PscnPathFollow2DExt {
+    uint32_t pathNodeHash;      // FNV-1a of Path2D node name
+    int16_t  progress;          // fixed-point 8.8 (0..1)
+    uint16_t flags;             // bit 0: loop, bit 1: rotateToPath, bit 2: cubicInterp
+    uint32_t loopOffsetMs;
+};
+static_assert(sizeof(PscnPathFollow2DExt) == 12);
+
+struct PscnTimerExt {
+    uint32_t waitTimeMs;
+    uint16_t flags;             // bit 0: oneShot, bit 1: autoStart
+    uint16_t _pad;
+    uint32_t eventNameHash;     // FNV-1a fired on tick
+};
+static_assert(sizeof(PscnTimerExt) == 12);
+
+enum PscnDecalBlend : uint8_t {
+    DECAL_ALPHA    = 0,
+    DECAL_ADDITIVE = 1,
+    DECAL_MULTIPLY = 2,
+};
+
+struct PscnDecalExt {
+    uint32_t spriteId;
+    uint8_t  blendMode;         // PscnDecalBlend
+    int8_t   sortOffset;
+    uint8_t  flipFlags;         // bit 0: flipH, bit 1: flipV
+    uint8_t  _pad;
+    uint32_t tintColor;         // RGBA packed
+    uint32_t _reserved;
+};
+static_assert(sizeof(PscnDecalExt) == 16);
+
+struct PscnVisibilityNotifierExt {
+    int32_t  width;             // fixed-point 16.16
+    int32_t  height;
+    uint32_t enterEventHash;
+    uint32_t exitEventHash;
+};
+static_assert(sizeof(PscnVisibilityNotifierExt) == 16);
+
+struct PscnNavRegion2DExt {
+    uint16_t pointCount;        // minimum 3
+    uint16_t navLayer;          // bitmask
+    uint32_t _reserved;
+    // followed by pointCount * { int32_t x; int32_t y; } (fixed-point 16.16)
+    // polygon is always closed (last->first segment implied)
+};
+// variable size: 8 + pointCount * 8
+
 struct PscnTilesetDef {
     uint32_t id;
     uint32_t nameHash;
@@ -162,9 +253,9 @@ static_assert(sizeof(PscnChunkDef) == 20);
 
 struct PscnTileCell {
     uint32_t tileId;            // 1-based export ID, 0 = empty
-    uint8_t  flags;
-    uint8_t  transform;         // bit 0: flipX, bit 1: flipY, bit 2: rotate90
-    uint16_t _pad;
+    uint8_t  flags;             // bit 0: flipX, bit 1: flipY, bit 2: rotate90
+    uint8_t  _pad;
+    uint16_t _pad2;
 };
 static_assert(sizeof(PscnTileCell) == 8);
 

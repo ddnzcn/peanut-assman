@@ -38,6 +38,20 @@ export function useObjectEditor({
       else if (node.data.type === "CollisionShape") { w = node.data.width; h = node.data.height; }
       else if (node.data.type === "Area") { w = node.data.width; h = node.data.height; }
       else if (node.data.type === "Light2D") { w = node.data.radius * 2; h = node.data.radius * 2; }
+      else if (node.data.type === "VisibilityNotifier") { w = node.data.width; h = node.data.height; }
+      else if (node.data.type === "Path2D" || node.data.type === "NavRegion2D") {
+        const pts = node.data.points;
+        if (pts.length) {
+          let minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y;
+          for (const p of pts) {
+            if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+          }
+          // Hit-test offset by min point
+          if (px >= wt.x + minX && px <= wt.x + maxX && py >= wt.y + minY && py <= wt.y + maxY) return node;
+          continue;
+        }
+      }
       if (px >= wt.x && px <= wt.x + w && py >= wt.y && py <= wt.y + h) return node;
     }
     return null;

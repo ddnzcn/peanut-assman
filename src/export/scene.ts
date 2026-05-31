@@ -12,6 +12,13 @@ const COLLISION_EXT_SIZE = 16;
 const AREA_EXT_SIZE = 16;
 const LIGHT_EXT_SIZE = 20;
 // AnimatedSprite ext is variable: 12 + 4 * animCount (aligned to 4)
+const CAMERA_EXT_SIZE = 24;
+const SPAWNER_EXT_SIZE = 16;
+const TIMER_EXT_SIZE = 12;
+const VISIBILITY_NOTIFIER_EXT_SIZE = 16;
+const DECAL_EXT_SIZE = 16;
+const PATH_FOLLOW_EXT_SIZE = 12;
+// Path2D and NavRegion2D ext is variable: 8 + 8 * pointCount
 const TILESET_DEF_SIZE = 28;
 const TILESET_REMAP_ENTRY_SIZE = 4;
 const CHUNK_DEF_SIZE = 20;
@@ -22,6 +29,8 @@ const STRING_NONE = 0xffffffff;
 const NODE_TYPE_MAP: Record<string, number> = {
   Root: 0, Node2D: 1, Sprite: 2, TileMap: 3,
   CollisionShape: 4, Area: 5, Light2D: 6, AnimatedSprite: 7,
+  Camera2D: 8, Spawner: 9, Path2D: 10, PathFollow2D: 11,
+  Timer: 12, Decal: 13, VisibilityNotifier: 14, NavRegion2D: 15,
 };
 
 export async function exportSceneBin(project: ProjectDocument, scene: SceneDocument): Promise<Uint8Array> {
@@ -46,6 +55,7 @@ export async function exportSceneBin(project: ProjectDocument, scene: SceneDocum
 
 const NODE_TYPE_NAMES: Record<number, string> = {
   0: "Root", 1: "Node2D", 2: "Sprite", 3: "TileMap", 4: "CollisionShape", 5: "Area", 6: "Light2D", 7: "AnimatedSprite",
+  8: "Camera2D", 9: "Spawner", 10: "Path2D", 11: "PathFollow2D", 12: "Timer", 13: "Decal", 14: "VisibilityNotifier", 15: "NavRegion2D",
 };
 
 export async function exportSceneDebugJson(project: ProjectDocument, scene: SceneDocument): Promise<string> {
@@ -258,6 +268,108 @@ async function buildExportState(project: ProjectDocument, scene: SceneDocument) 
         v.setUint32(o + 8, defaultSpriteId, true);
         for (let i = 0; i < animCount; i++) {
           v.setUint32(o + 12 + i * 4, resolvedAnims[i].nameHash, true);
+        }
+      };
+    } else if (node.data.type === "Camera2D") {
+      extSize = CAMERA_EXT_SIZE;
+      const d = node.data;
+      const followHash = d.followTargetName ? fnv1a32(d.followTargetName) : 0;
+      writeExt = (v, o) => {
+        v.setInt16(o, packFixed88(d.zoom), true);
+        v.setInt16(o + 2, packFixed88(d.smoothingSpeed), true);
+        v.setUint16(o + 4, (d.isCurrent ? 1 : 0) | (d.useBounds ? 2 : 0), true);
+        v.setUint16(o + 6, 0, true);
+        v.setUint32(o + 8, followHash, true);
+        v.setInt16(o + 12, Math.max(-32768, Math.min(32767, Math.round(d.boundsLeft))), true);
+        v.setInt16(o + 14, Math.max(-32768, Math.min(32767, Math.round(d.boundsTop))), true);
+        v.setInt16(o + 16, Math.max(-32768, Math.min(32767, Math.round(d.boundsRight))), true);
+        v.setInt16(o + 18, Math.max(-32768, Math.min(32767, Math.round(d.boundsBottom))), true);
+        v.setUint32(o + 20, 0, true);
+      };
+    } else if (node.data.type === "Spawner") {
+      extSize = SPAWNER_EXT_SIZE;
+      const d = node.data;
+      const sceneHash = d.sceneName ? fnv1a32(d.sceneName) : 0;
+      writeExt = (v, o) => {
+        v.setUint32(o, sceneHash, true);
+        v.setUint16(o + 4, Math.min(d.spawnIntervalMs, 0xffff), true);
+        v.setUint16(o + 6, Math.min(d.maxAlive, 0xffff), true);
+        v.setUint16(o + 8, d.autoStart ? 1 : 0, true);
+        v.setUint16(o + 10, 0, true);
+        v.setUint32(o + 12, Math.round(d.spawnAreaRadius * 65536), true);
+      };
+    } else if (node.data.type === "Timer") {
+      extSize = TIMER_EXT_SIZE;
+      const d = node.data;
+      const eventHash = d.eventName ? fnv1a32(d.eventName) : 0;
+      writeExt = (v, o) => {
+        v.setUint32(o, d.waitTimeMs >>> 0, true);
+        v.setUint16(o + 4, (d.oneShot ? 1 : 0) | (d.autoStart ? 2 : 0), true);
+        v.setUint16(o + 6, 0, true);
+        v.setUint32(o + 8, eventHash, true);
+      };
+    } else if (node.data.type === "VisibilityNotifier") {
+      extSize = VISIBILITY_NOTIFIER_EXT_SIZE;
+      const d = node.data;
+      const enterHash = d.enterEventName ? fnv1a32(d.enterEventName) : 0;
+      const exitHash = d.exitEventName ? fnv1a32(d.exitEventName) : 0;
+      writeExt = (v, o) => {
+        v.setInt32(o, Math.round(d.width * 65536), true);
+        v.setInt32(o + 4, Math.round(d.height * 65536), true);
+        v.setUint32(o + 8, enterHash, true);
+        v.setUint32(o + 12, exitHash, true);
+      };
+    } else if (node.data.type === "Decal") {
+      extSize = DECAL_EXT_SIZE;
+      const d = node.data;
+      const sprite = d.sliceId ? project.sprites.find((s) => s.sliceId === d.sliceId) : undefined;
+      const spriteId = sprite?.id ?? 0;
+      const blendCode = d.blendMode === "additive" ? 1 : d.blendMode === "multiply" ? 2 : 0;
+      writeExt = (v, o) => {
+        v.setUint32(o, spriteId, true);
+        v.setUint8(o + 4, blendCode);
+        v.setInt8(o + 5, Math.max(-128, Math.min(127, d.sortOffset)));
+        v.setUint8(o + 6, (d.flipH ? 1 : 0) | (d.flipV ? 2 : 0));
+        v.setUint8(o + 7, 0);
+        v.setUint32(o + 8, parseInt(d.tintColor.replace("#", ""), 16) >>> 0, true);
+        v.setUint32(o + 12, 0, true);
+      };
+    } else if (node.data.type === "Path2D") {
+      const d = node.data;
+      const pointCount = d.points.length;
+      extSize = 8 + pointCount * 8;
+      writeExt = (v, o) => {
+        v.setUint16(o, pointCount, true);
+        v.setUint16(o + 2, d.closed ? 1 : 0, true);
+        v.setUint32(o + 4, parseInt(d.color.replace("#", "").padEnd(8, "f"), 16) >>> 0, true);
+        for (let i = 0; i < pointCount; i++) {
+          const off = o + 8 + i * 8;
+          v.setInt32(off, Math.round(d.points[i].x * 65536), true);
+          v.setInt32(off + 4, Math.round(d.points[i].y * 65536), true);
+        }
+      };
+    } else if (node.data.type === "PathFollow2D") {
+      extSize = PATH_FOLLOW_EXT_SIZE;
+      const d = node.data;
+      const pathHash = d.pathNodeName ? fnv1a32(d.pathNodeName) : 0;
+      writeExt = (v, o) => {
+        v.setUint32(o, pathHash, true);
+        v.setInt16(o + 4, packFixed88(d.progress), true);
+        v.setUint16(o + 6, (d.loop ? 1 : 0) | (d.rotateToPath ? 2 : 0) | (d.cubicInterp ? 4 : 0), true);
+        v.setUint32(o + 8, d.loopOffsetMs >>> 0, true);
+      };
+    } else if (node.data.type === "NavRegion2D") {
+      const d = node.data;
+      const pointCount = d.points.length;
+      extSize = 8 + pointCount * 8;
+      writeExt = (v, o) => {
+        v.setUint16(o, pointCount, true);
+        v.setUint16(o + 2, d.navLayer & 0xffff, true);
+        v.setUint32(o + 4, 0, true);
+        for (let i = 0; i < pointCount; i++) {
+          const off = o + 8 + i * 8;
+          v.setInt32(off, Math.round(d.points[i].x * 65536), true);
+          v.setInt32(off + 4, Math.round(d.points[i].y * 65536), true);
         }
       };
     }

@@ -52,6 +52,22 @@ function createDefaultNodeData(type: SceneNodeType): SceneNodeData {
       return { type: "Light2D", variant: "omni", radius: 128, color: "#ffffff", intensity: 1, falloff: 1, directionAngle: 0, coneAngle: 45 };
     case "AnimatedSprite":
       return { type: "AnimatedSprite", spriteAnimationIds: [], flipH: false, flipV: false, tintColor: "#ffffffff" };
+    case "Camera2D":
+      return { type: "Camera2D", zoom: 1, smoothingSpeed: 0, isCurrent: false, useBounds: false, boundsLeft: 0, boundsTop: 0, boundsRight: 320, boundsBottom: 240, followTargetName: "" };
+    case "Spawner":
+      return { type: "Spawner", sceneName: "", spawnIntervalMs: 1000, maxAlive: 0, autoStart: false, spawnAreaRadius: 0 };
+    case "Timer":
+      return { type: "Timer", waitTimeMs: 1000, oneShot: true, autoStart: false, eventName: "" };
+    case "VisibilityNotifier":
+      return { type: "VisibilityNotifier", width: 64, height: 64, enterEventName: "", exitEventName: "" };
+    case "Decal":
+      return { type: "Decal", sliceId: "", blendMode: "alpha", sortOffset: 0, flipH: false, flipV: false, tintColor: "#ffffffff" };
+    case "Path2D":
+      return { type: "Path2D", points: [{ x: 0, y: 0 }, { x: 64, y: 0 }], closed: false, color: "#87ff87" };
+    case "PathFollow2D":
+      return { type: "PathFollow2D", pathNodeName: "", progress: 0, loop: true, rotateToPath: false, cubicInterp: false, loopOffsetMs: 2000 };
+    case "NavRegion2D":
+      return { type: "NavRegion2D", points: [{ x: 0, y: 0 }, { x: 64, y: 0 }, { x: 64, y: 64 }, { x: 0, y: 64 }], navLayer: 1 };
   }
 }
 

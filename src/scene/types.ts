@@ -6,7 +6,15 @@ export type SceneNodeType =
   | "CollisionShape"
   | "Area"
   | "Light2D"
-  | "AnimatedSprite";
+  | "AnimatedSprite"
+  | "Camera2D"
+  | "Spawner"
+  | "Timer"
+  | "VisibilityNotifier"
+  | "Decal"
+  | "Path2D"
+  | "PathFollow2D"
+  | "NavRegion2D";
 
 export type TileMapProjection =
   | "orthogonal"
@@ -107,6 +115,84 @@ export interface AnimatedSpriteNodeData {
   tintColor: string;
 }
 
+export interface Camera2DNodeData {
+  type: "Camera2D";
+  zoom: number;
+  smoothingSpeed: number;
+  isCurrent: boolean;
+  useBounds: boolean;
+  boundsLeft: number;
+  boundsTop: number;
+  boundsRight: number;
+  boundsBottom: number;
+  followTargetName: string;
+}
+
+export interface SpawnerNodeData {
+  type: "Spawner";
+  sceneName: string;
+  spawnIntervalMs: number;
+  maxAlive: number;
+  autoStart: boolean;
+  spawnAreaRadius: number;
+}
+
+export interface TimerNodeData {
+  type: "Timer";
+  waitTimeMs: number;
+  oneShot: boolean;
+  autoStart: boolean;
+  eventName: string;
+}
+
+export interface VisibilityNotifierNodeData {
+  type: "VisibilityNotifier";
+  width: number;
+  height: number;
+  enterEventName: string;
+  exitEventName: string;
+}
+
+export type DecalBlendMode = "alpha" | "additive" | "multiply";
+
+export interface DecalNodeData {
+  type: "Decal";
+  sliceId: string;
+  blendMode: DecalBlendMode;
+  sortOffset: number;
+  flipH: boolean;
+  flipV: boolean;
+  tintColor: string;
+}
+
+export interface PathPoint {
+  x: number;
+  y: number;
+}
+
+export interface Path2DNodeData {
+  type: "Path2D";
+  points: PathPoint[];
+  closed: boolean;
+  color: string;
+}
+
+export interface PathFollow2DNodeData {
+  type: "PathFollow2D";
+  pathNodeName: string;
+  progress: number;
+  loop: boolean;
+  rotateToPath: boolean;
+  cubicInterp: boolean;
+  loopOffsetMs: number;
+}
+
+export interface NavRegion2DNodeData {
+  type: "NavRegion2D";
+  points: PathPoint[];
+  navLayer: number;
+}
+
 export type SceneNodeData =
   | RootNodeData
   | Node2DData
@@ -115,7 +201,15 @@ export type SceneNodeData =
   | CollisionShapeNodeData
   | AreaNodeData
   | Light2DNodeData
-  | AnimatedSpriteNodeData;
+  | AnimatedSpriteNodeData
+  | Camera2DNodeData
+  | SpawnerNodeData
+  | TimerNodeData
+  | VisibilityNotifierNodeData
+  | DecalNodeData
+  | Path2DNodeData
+  | PathFollow2DNodeData
+  | NavRegion2DNodeData;
 
 export interface SceneNode {
   id: string;

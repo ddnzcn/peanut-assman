@@ -2,18 +2,27 @@ import { useEffect, useState } from "react";
 import type {
   AnimatedSpriteNodeData,
   AreaNodeData,
+  Camera2DNodeData,
   CollisionShapeNodeData,
+  DecalNodeData,
   Light2DNodeData,
+  NavRegion2DNodeData,
+  Path2DNodeData,
+  PathFollow2DNodeData,
   ProjectAction,
   ProjectDocument,
   SceneDocument,
   SceneNode,
   SliceAsset,
+  SpawnerNodeData,
   SpriteAnimation,
+  SpriteAsset,
   SpriteNodeData,
   TileMapNodeData,
   TileMapProjection,
+  TimerNodeData,
   Transform2D,
+  VisibilityNotifierNodeData,
 } from "../../types";
 
 function DraftInput(props: {
@@ -120,6 +129,14 @@ export function NodeInspector({ scene, node, project, dispatch }: NodeInspectorP
       {node.data.type === "Area" && <AreaInspector data={node.data} onUpdate={(d) => updateData(d)} />}
       {node.data.type === "Light2D" && <LightInspector data={node.data} onUpdate={(d) => updateData(d)} />}
       {node.data.type === "AnimatedSprite" && <AnimatedSpriteInspector data={node.data} spriteAnimations={project.spriteAnimations} onUpdate={(d) => updateData(d)} />}
+      {node.data.type === "Camera2D" && <Camera2DInspector data={node.data} onUpdate={(d) => updateData(d)} />}
+      {node.data.type === "Spawner" && <SpawnerInspector data={node.data} onUpdate={(d) => updateData(d)} />}
+      {node.data.type === "Timer" && <TimerInspector data={node.data} onUpdate={(d) => updateData(d)} />}
+      {node.data.type === "VisibilityNotifier" && <VisibilityNotifierInspector data={node.data} onUpdate={(d) => updateData(d)} />}
+      {node.data.type === "Decal" && <DecalInspector data={node.data} slices={project.slices} sprites={project.sprites} onUpdate={(d) => updateData(d)} />}
+      {node.data.type === "Path2D" && <Path2DInspector data={node.data} onUpdate={(d) => updateData(d)} />}
+      {node.data.type === "PathFollow2D" && <PathFollow2DInspector data={node.data} onUpdate={(d) => updateData(d)} />}
+      {node.data.type === "NavRegion2D" && <NavRegion2DInspector data={node.data} onUpdate={(d) => updateData(d)} />}
     </div>
   );
 }
@@ -313,6 +330,133 @@ function AnimatedSpriteInspector({ data, spriteAnimations, onUpdate }: { data: A
         Tint
         <input type="color" value={data.tintColor.slice(0, 7)} onChange={(e) => onUpdate({ ...data, tintColor: e.target.value })} />
       </label>
+    </>
+  );
+}
+
+function Camera2DInspector({ data, onUpdate }: { data: Camera2DNodeData; onUpdate: (d: Camera2DNodeData) => void }) {
+  return (
+    <>
+      <div className="inspector-section-label">Camera 2D</div>
+      <label>Zoom <DraftInput value={data.zoom} step={0.1} min={0.1} onCommit={(v) => onUpdate({ ...data, zoom: v })} /></label>
+      <label>Smoothing <DraftInput value={data.smoothingSpeed} step={0.1} min={0} onCommit={(v) => onUpdate({ ...data, smoothingSpeed: v })} /></label>
+      <label className="checkbox-row"><span>Is Current</span><input type="checkbox" checked={data.isCurrent} onChange={(e) => onUpdate({ ...data, isCurrent: e.target.checked })} /></label>
+      <label className="checkbox-row"><span>Use Bounds</span><input type="checkbox" checked={data.useBounds} onChange={(e) => onUpdate({ ...data, useBounds: e.target.checked })} /></label>
+      {data.useBounds && (
+        <>
+          <label>Left <DraftInput value={data.boundsLeft} step={1} onCommit={(v) => onUpdate({ ...data, boundsLeft: v })} /></label>
+          <label>Top <DraftInput value={data.boundsTop} step={1} onCommit={(v) => onUpdate({ ...data, boundsTop: v })} /></label>
+          <label>Right <DraftInput value={data.boundsRight} step={1} onCommit={(v) => onUpdate({ ...data, boundsRight: v })} /></label>
+          <label>Bottom <DraftInput value={data.boundsBottom} step={1} onCommit={(v) => onUpdate({ ...data, boundsBottom: v })} /></label>
+        </>
+      )}
+      <label>Follow Target<input type="text" value={data.followTargetName} onChange={(e) => onUpdate({ ...data, followTargetName: e.target.value })} placeholder="node name" /></label>
+    </>
+  );
+}
+
+function SpawnerInspector({ data, onUpdate }: { data: SpawnerNodeData; onUpdate: (d: SpawnerNodeData) => void }) {
+  return (
+    <>
+      <div className="inspector-section-label">Spawner</div>
+      <label>Scene<input type="text" value={data.sceneName} onChange={(e) => onUpdate({ ...data, sceneName: e.target.value })} placeholder="scene name" /></label>
+      <label>Interval (ms) <DraftInput value={data.spawnIntervalMs} step={50} min={0} onCommit={(v) => onUpdate({ ...data, spawnIntervalMs: v })} /></label>
+      <label>Max Alive <DraftInput value={data.maxAlive} step={1} min={0} onCommit={(v) => onUpdate({ ...data, maxAlive: v })} /></label>
+      <label className="checkbox-row"><span>Auto Start</span><input type="checkbox" checked={data.autoStart} onChange={(e) => onUpdate({ ...data, autoStart: e.target.checked })} /></label>
+      <label>Area Radius <DraftInput value={data.spawnAreaRadius} step={1} min={0} onCommit={(v) => onUpdate({ ...data, spawnAreaRadius: v })} /></label>
+    </>
+  );
+}
+
+function TimerInspector({ data, onUpdate }: { data: TimerNodeData; onUpdate: (d: TimerNodeData) => void }) {
+  return (
+    <>
+      <div className="inspector-section-label">Timer</div>
+      <label>Wait Time (ms) <DraftInput value={data.waitTimeMs} step={50} min={0} onCommit={(v) => onUpdate({ ...data, waitTimeMs: v })} /></label>
+      <label className="checkbox-row"><span>One Shot</span><input type="checkbox" checked={data.oneShot} onChange={(e) => onUpdate({ ...data, oneShot: e.target.checked })} /></label>
+      <label className="checkbox-row"><span>Auto Start</span><input type="checkbox" checked={data.autoStart} onChange={(e) => onUpdate({ ...data, autoStart: e.target.checked })} /></label>
+      <label>Event<input type="text" value={data.eventName} onChange={(e) => onUpdate({ ...data, eventName: e.target.value })} placeholder="event name" /></label>
+    </>
+  );
+}
+
+function VisibilityNotifierInspector({ data, onUpdate }: { data: VisibilityNotifierNodeData; onUpdate: (d: VisibilityNotifierNodeData) => void }) {
+  return (
+    <>
+      <div className="inspector-section-label">Visibility Notifier</div>
+      <label>Width <DraftInput value={data.width} step={1} min={1} onCommit={(v) => onUpdate({ ...data, width: v })} /></label>
+      <label>Height <DraftInput value={data.height} step={1} min={1} onCommit={(v) => onUpdate({ ...data, height: v })} /></label>
+      <label>Enter Event<input type="text" value={data.enterEventName} onChange={(e) => onUpdate({ ...data, enterEventName: e.target.value })} placeholder="event name" /></label>
+      <label>Exit Event<input type="text" value={data.exitEventName} onChange={(e) => onUpdate({ ...data, exitEventName: e.target.value })} placeholder="event name" /></label>
+    </>
+  );
+}
+
+function DecalInspector({ data, slices, sprites, onUpdate }: { data: DecalNodeData; slices: SliceAsset[]; sprites: SpriteAsset[]; onUpdate: (d: DecalNodeData) => void }) {
+  const atlasSliceIds = new Set(sprites.filter((s) => s.includeInAtlas).map((s) => s.sliceId));
+  const availableSlices = slices.filter((s) => atlasSliceIds.has(s.id));
+  return (
+    <>
+      <div className="inspector-section-label">Decal</div>
+      <label>Slice<select value={data.sliceId} onChange={(e) => onUpdate({ ...data, sliceId: e.target.value })}>
+        <option value="">-- none --</option>
+        {availableSlices.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+      </select></label>
+      <label>Blend<select value={data.blendMode} onChange={(e) => onUpdate({ ...data, blendMode: e.target.value as DecalNodeData["blendMode"] })}>
+        <option value="alpha">Alpha</option>
+        <option value="additive">Additive</option>
+        <option value="multiply">Multiply</option>
+      </select></label>
+      <label>Sort Offset <DraftInput value={data.sortOffset} step={1} onCommit={(v) => onUpdate({ ...data, sortOffset: v })} /></label>
+      <label className="checkbox-row"><span>Flip H</span><input type="checkbox" checked={data.flipH} onChange={(e) => onUpdate({ ...data, flipH: e.target.checked })} /></label>
+      <label className="checkbox-row"><span>Flip V</span><input type="checkbox" checked={data.flipV} onChange={(e) => onUpdate({ ...data, flipV: e.target.checked })} /></label>
+      <label>Tint<input type="color" value={data.tintColor.slice(0, 7)} onChange={(e) => onUpdate({ ...data, tintColor: e.target.value })} /></label>
+    </>
+  );
+}
+
+function Path2DInspector({ data, onUpdate }: { data: Path2DNodeData; onUpdate: (d: Path2DNodeData) => void }) {
+  return (
+    <>
+      <div className="inspector-section-label">Path 2D</div>
+      <label className="checkbox-row"><span>Closed</span><input type="checkbox" checked={data.closed} onChange={(e) => onUpdate({ ...data, closed: e.target.checked })} /></label>
+      <label>Color<input type="color" value={data.color.slice(0, 7)} onChange={(e) => onUpdate({ ...data, color: e.target.value })} /></label>
+      <div className="inspector-section-label" style={{ fontSize: "0.7rem", opacity: 0.7 }}>Points ({data.points.length}) — drag on canvas, shift-click segment to add, alt-click handle to remove</div>
+    </>
+  );
+}
+
+function PathFollow2DInspector({ data, onUpdate }: { data: PathFollow2DNodeData; onUpdate: (d: PathFollow2DNodeData) => void }) {
+  return (
+    <>
+      <div className="inspector-section-label">Path Follow 2D</div>
+      <label>Path Target<input type="text" value={data.pathNodeName} onChange={(e) => onUpdate({ ...data, pathNodeName: e.target.value })} placeholder="path node name" /></label>
+      <label>Progress <DraftInput value={data.progress} step={0.01} min={0} max={1} onCommit={(v) => onUpdate({ ...data, progress: v })} /></label>
+      <label className="checkbox-row"><span>Loop</span><input type="checkbox" checked={data.loop} onChange={(e) => onUpdate({ ...data, loop: e.target.checked })} /></label>
+      <label className="checkbox-row"><span>Rotate To Path</span><input type="checkbox" checked={data.rotateToPath} onChange={(e) => onUpdate({ ...data, rotateToPath: e.target.checked })} /></label>
+      <label className="checkbox-row"><span>Cubic Interp</span><input type="checkbox" checked={data.cubicInterp} onChange={(e) => onUpdate({ ...data, cubicInterp: e.target.checked })} /></label>
+      <label>Loop Time (ms) <DraftInput value={data.loopOffsetMs} step={100} min={0} onCommit={(v) => onUpdate({ ...data, loopOffsetMs: v })} /></label>
+    </>
+  );
+}
+
+function NavRegion2DInspector({ data, onUpdate }: { data: NavRegion2DNodeData; onUpdate: (d: NavRegion2DNodeData) => void }) {
+  function setBit(bit: number, on: boolean) {
+    const next = on ? (data.navLayer | (1 << bit)) : (data.navLayer & ~(1 << bit));
+    onUpdate({ ...data, navLayer: next & 0xff });
+  }
+  return (
+    <>
+      <div className="inspector-section-label">Nav Region 2D</div>
+      <div className="inspector-section-label" style={{ fontSize: "0.7rem", opacity: 0.7 }}>Nav Layer (bits 0..7)</div>
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        {Array.from({ length: 8 }, (_, i) => (
+          <label key={i} style={{ display: "flex", alignItems: "center", gap: 2, fontSize: "0.7rem" }}>
+            <input type="checkbox" checked={(data.navLayer & (1 << i)) !== 0} onChange={(e) => setBit(i, e.target.checked)} />{i}
+          </label>
+        ))}
+      </div>
+      <div className="inspector-section-label" style={{ fontSize: "0.7rem", opacity: 0.7 }}>Points ({data.points.length}) — drag on canvas, shift-click segment to add, alt-click handle to remove (min 3)</div>
     </>
   );
 }

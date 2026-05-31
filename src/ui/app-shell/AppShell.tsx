@@ -952,10 +952,18 @@ export function AppShell() {
                     }}
                   >
                     <option value="Sprite">Sprite</option>
+                    <option value="AnimatedSprite">Anim Sprite</option>
                     <option value="CollisionShape">Collision</option>
                     <option value="Area">Area</option>
                     <option value="Light2D">Light</option>
-                    <option value="AnimatedSprite">Anim Sprite</option>
+                    <option value="Camera2D">Camera</option>
+                    <option value="Spawner">Spawner</option>
+                    <option value="Timer">Timer</option>
+                    <option value="VisibilityNotifier">VisNotifier</option>
+                    <option value="Decal">Decal</option>
+                    <option value="Path2D">Path</option>
+                    <option value="PathFollow2D">PathFollow</option>
+                    <option value="NavRegion2D">NavRegion</option>
                     <option value="Node2D">Node2D</option>
                   </select>
                 )}

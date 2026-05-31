@@ -59,7 +59,7 @@ Nodes are serialized in **pre-order traversal** of the scene tree. The root node
 | 52     | i16  | parallaxX           | Parallax factor X, fixed-point 8.8 (1.0 = normal) |
 | 54     | i16  | parallaxY           | Parallax factor Y, fixed-point 8.8 (1.0 = normal) |
 | 56     | u16  | extSize             | Size of type-specific extension in bytes |
-| 54-63  | u8[] | reserved            | Zero-filled |
+| 58-63  | u8[6]| reserved            | Zero-filled |
 
 ### Node Types
 
@@ -73,6 +73,14 @@ Nodes are serialized in **pre-order traversal** of the scene tree. The root node
 | 5     | Area           | 16 bytes |
 | 6     | Light2D        | 20 bytes |
 | 7     | AnimatedSprite | 12 + 4*N bytes |
+| 8     | Camera2D       | 24 bytes |
+| 9     | Spawner        | 16 bytes |
+| 10    | Path2D         | 8 + 8*N bytes |
+| 11    | PathFollow2D   | 12 bytes |
+| 12    | Timer          | 12 bytes |
+| 13    | Decal          | 16 bytes |
+| 14    | VisibilityNotifier | 16 bytes |
+| 15    | NavRegion2D    | 8 + 8*N bytes |
 
 ### Sprite Extension (12 bytes)
 
@@ -145,6 +153,91 @@ Nodes are serialized in **pre-order traversal** of the scene tree. The root node
 | 4      | u32  | tintColor       | RGBA as packed u32 |
 | 8      | u32  | defaultSpriteId | First frame sprite ID (static fallback) |
 | 12     | u32[N] | animNameHashes | FNV-1a hashes of animation names |
+
+### Camera2D Extension (24 bytes)
+
+| Offset | Type | Field            | Notes |
+|--------|------|------------------|-------|
+| 0      | i16  | zoom             | Fixed-point 8.8 (256 = 1.0) |
+| 2      | i16  | smoothingSpeed   | Fixed-point 8.8 (0 = snap) |
+| 4      | u16  | flags            | bit 0: isCurrent, bit 1: useBounds |
+| 6      | u16  | _pad             | Reserved |
+| 8      | u32  | followTargetHash | FNV-1a of target node name (0 = none) |
+| 12     | i16  | boundsLeft       | Pixel coordinate |
+| 14     | i16  | boundsTop        | Pixel coordinate |
+| 16     | i16  | boundsRight      | Pixel coordinate |
+| 18     | i16  | boundsBottom     | Pixel coordinate |
+| 20     | u32  | _reserved        | 0 |
+
+### Spawner Extension (16 bytes)
+
+| Offset | Type | Field            | Notes |
+|--------|------|------------------|-------|
+| 0      | u32  | sceneNameHash    | FNV-1a of scene/entity name |
+| 4      | u16  | spawnIntervalMs  | 0 = manual only |
+| 6      | u16  | maxAlive         | 0 = unlimited |
+| 8      | u16  | flags            | bit 0: autoStart |
+| 10     | u16  | _pad             | Reserved |
+| 12     | u32  | spawnAreaRadius  | Fixed-point 16.16 (pixels) |
+
+### Path2D Extension (8 + 8*N bytes)
+
+| Offset | Type   | Field      | Notes |
+|--------|--------|------------|-------|
+| 0      | u16    | pointCount | Number of points (N) |
+| 2      | u16    | flags      | bit 0: closed |
+| 4      | u32    | color      | RGBA editor preview color |
+| 8      | i32[N*2] | points   | Pairs of (x, y) fixed-point 16.16 |
+
+### PathFollow2D Extension (12 bytes)
+
+| Offset | Type | Field         | Notes |
+|--------|------|---------------|-------|
+| 0      | u32  | pathNodeHash  | FNV-1a of Path2D node name |
+| 4      | i16  | progress      | Fixed-point 8.8 (0..1 along path) |
+| 6      | u16  | flags         | bit 0: loop, bit 1: rotateToPath, bit 2: cubicInterp |
+| 8      | u32  | loopOffsetMs  | Milliseconds per full traversal |
+
+### Timer Extension (12 bytes)
+
+| Offset | Type | Field         | Notes |
+|--------|------|---------------|-------|
+| 0      | u32  | waitTimeMs    | Trigger delay |
+| 4      | u16  | flags         | bit 0: oneShot, bit 1: autoStart |
+| 6      | u16  | _pad          | Reserved |
+| 8      | u32  | eventNameHash | FNV-1a of event name fired on tick |
+
+### Decal Extension (16 bytes)
+
+| Offset | Type | Field      | Notes |
+|--------|------|------------|-------|
+| 0      | u32  | spriteId   | Atlas sprite index |
+| 4      | u8   | blendMode  | 0=alpha, 1=additive, 2=multiply |
+| 5      | i8   | sortOffset | Per-decal draw-order tweak within renderLayer |
+| 6      | u8   | flipFlags  | bit 0: flipH, bit 1: flipV |
+| 7      | u8   | _pad       | Reserved |
+| 8      | u32  | tintColor  | RGBA as packed u32 |
+| 12     | u32  | _reserved  | 0 (future variants) |
+
+### VisibilityNotifier Extension (16 bytes)
+
+| Offset | Type | Field          | Notes |
+|--------|------|----------------|-------|
+| 0      | i32  | width          | Fixed-point 16.16 (pixels) |
+| 4      | i32  | height         | Fixed-point 16.16 (pixels) |
+| 8      | u32  | enterEventHash | FNV-1a fired when rect enters screen |
+| 12     | u32  | exitEventHash  | FNV-1a fired when rect exits screen |
+
+### NavRegion2D Extension (8 + 8*N bytes)
+
+Always represents a closed polygon (renderer/pathfinder treats last → first as a segment).
+
+| Offset | Type   | Field      | Notes |
+|--------|--------|------------|-------|
+| 0      | u16    | pointCount | Number of points (N), minimum 3 |
+| 2      | u16    | navLayer   | Bitmask (bits 0..7 used in editor) |
+| 4      | u32    | _reserved  | 0 |
+| 8      | i32[N*2] | points   | Pairs of (x, y) fixed-point 16.16 |
 
 ---
 

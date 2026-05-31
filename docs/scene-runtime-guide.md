@@ -22,6 +22,14 @@ struct SceneNode {
         PscnAreaExt area;
         PscnLight2DExt light;
         PscnAnimatedSpriteExt animSprite;
+        PscnCamera2DExt camera;
+        PscnSpawnerExt spawner;
+        PscnPath2DExt path;
+        PscnPathFollow2DExt pathFollow;
+        PscnTimerExt timer;
+        PscnDecalExt decal;
+        PscnVisibilityNotifierExt visibilityNotifier;
+        PscnNavRegion2DExt navRegion;
     } ext;
     std::vector<SceneNode*> children;
 };

@@ -504,6 +504,115 @@ export function renderSceneNodes(
           context.lineWidth = 1;
           context.stroke();
         }
+      } else if (node.data.type === "Camera2D") {
+        const camZoom = node.data.zoom || 1;
+        const vw = 320 / camZoom * zoom;
+        const vh = 240 / camZoom * zoom;
+        context.strokeStyle = "rgba(255,179,71,0.85)";
+        context.lineWidth = node.data.isCurrent ? 2 : 1;
+        context.setLineDash([4, 4]);
+        context.strokeRect(px - vw / 2, py - vh / 2, vw, vh);
+        context.setLineDash([]);
+        context.beginPath();
+        context.arc(px, py, 4, 0, Math.PI * 2);
+        context.fillStyle = node.data.isCurrent ? "rgba(255,179,71,0.9)" : "rgba(255,179,71,0.5)";
+        context.fill();
+        if (node.data.useBounds) {
+          context.strokeStyle = "rgba(255,179,71,0.4)";
+          context.lineWidth = 1;
+          context.strokeRect(node.data.boundsLeft * zoom, node.data.boundsTop * zoom, (node.data.boundsRight - node.data.boundsLeft) * zoom, (node.data.boundsBottom - node.data.boundsTop) * zoom);
+        }
+      } else if (node.data.type === "Spawner") {
+        context.strokeStyle = "rgba(255,135,197,0.85)";
+        context.fillStyle = "rgba(255,135,197,0.85)";
+        context.lineWidth = 1.5;
+        context.beginPath();
+        context.moveTo(px - 6, py); context.lineTo(px + 6, py);
+        context.moveTo(px, py - 6); context.lineTo(px, py + 6);
+        context.stroke();
+        context.beginPath();
+        context.arc(px, py, 3, 0, Math.PI * 2);
+        context.fill();
+        if (node.data.spawnAreaRadius > 0) {
+          context.setLineDash([3, 3]);
+          context.beginPath();
+          context.arc(px, py, node.data.spawnAreaRadius * zoom, 0, Math.PI * 2);
+          context.stroke();
+          context.setLineDash([]);
+        }
+      } else if (node.data.type === "Timer") {
+        context.strokeStyle = "rgba(160,160,255,0.9)";
+        context.fillStyle = "rgba(160,160,255,0.25)";
+        context.lineWidth = 1.5;
+        context.beginPath();
+        context.arc(px, py, 8, 0, Math.PI * 2);
+        context.fill();
+        context.stroke();
+        context.beginPath();
+        context.moveTo(px, py); context.lineTo(px, py - 6);
+        context.moveTo(px, py); context.lineTo(px + 4, py + 1);
+        context.stroke();
+      } else if (node.data.type === "VisibilityNotifier") {
+        context.strokeStyle = "rgba(127,255,212,0.85)";
+        context.lineWidth = 1.5;
+        context.setLineDash([6, 4]);
+        context.strokeRect(px, py, node.data.width * zoom, node.data.height * zoom);
+        context.setLineDash([]);
+      } else if (node.data.type === "Decal") {
+        const slice = sliceById.get(node.data.sliceId);
+        const source = slice ? sourceById.get(slice.sourceImageId) : null;
+        const image = source ? getCachedRenderImage(source.id, source.dataUrl, onInvalidate) : null;
+        if (slice && image?.complete && image.naturalWidth) {
+          context.save();
+          context.translate(px, py);
+          if (wt.rotation) context.rotate(wt.rotation * Math.PI / 180);
+          context.scale(wt.scaleX * (node.data.flipH ? -1 : 1), wt.scaleY * (node.data.flipV ? -1 : 1));
+          const blend = node.data.blendMode;
+          context.globalCompositeOperation = blend === "additive" ? "lighter" : blend === "multiply" ? "multiply" : "source-over";
+          context.drawImage(image, slice.sourceRect.x, slice.sourceRect.y, slice.sourceRect.width, slice.sourceRect.height, 0, 0, slice.sourceRect.width * zoom, slice.sourceRect.height * zoom);
+          context.restore();
+        } else {
+          context.strokeStyle = "rgba(180,180,180,0.5)";
+          context.setLineDash([3, 3]);
+          context.strokeRect(px, py, 16 * zoom, 16 * zoom);
+          context.setLineDash([]);
+        }
+      } else if (node.data.type === "Path2D") {
+        const pts = node.data.points;
+        if (pts.length >= 2) {
+          context.strokeStyle = node.data.color || "#87ff87";
+          context.lineWidth = 2;
+          context.beginPath();
+          context.moveTo(px + pts[0].x * zoom, py + pts[0].y * zoom);
+          for (let i = 1; i < pts.length; i++) {
+            context.lineTo(px + pts[i].x * zoom, py + pts[i].y * zoom);
+          }
+          if (node.data.closed) context.closePath();
+          context.stroke();
+        }
+      } else if (node.data.type === "PathFollow2D") {
+        context.strokeStyle = "rgba(170,255,170,0.9)";
+        context.fillStyle = "rgba(170,255,170,0.6)";
+        context.lineWidth = 1.5;
+        context.beginPath();
+        context.arc(px, py, 5, 0, Math.PI * 2);
+        context.fill();
+        context.stroke();
+      } else if (node.data.type === "NavRegion2D") {
+        const pts = node.data.points;
+        if (pts.length >= 3) {
+          context.fillStyle = "rgba(95,165,255,0.15)";
+          context.strokeStyle = "rgba(95,165,255,0.85)";
+          context.lineWidth = 1.5;
+          context.beginPath();
+          context.moveTo(px + pts[0].x * zoom, py + pts[0].y * zoom);
+          for (let i = 1; i < pts.length; i++) {
+            context.lineTo(px + pts[i].x * zoom, py + pts[i].y * zoom);
+          }
+          context.closePath();
+          context.fill();
+          context.stroke();
+        }
       }
 
       if (node.id === selectedNodeId && node.data.type !== "Node2D") {
@@ -522,6 +631,23 @@ function getNodeBounds(node: SceneNode): { w: number; h: number } {
     case "Light2D": return { w: node.data.radius * 2, h: node.data.radius * 2 };
     case "Sprite": return { w: 16, h: 16 };
     case "AnimatedSprite": return { w: 16, h: 16 };
+    case "VisibilityNotifier": return { w: node.data.width, h: node.data.height };
+    case "Decal": return { w: 16, h: 16 };
+    case "Camera2D": return { w: 16, h: 16 };
+    case "Spawner": return { w: 16, h: 16 };
+    case "Timer": return { w: 16, h: 16 };
+    case "PathFollow2D": return { w: 16, h: 16 };
+    case "Path2D":
+    case "NavRegion2D": {
+      const pts = node.data.points;
+      if (!pts.length) return { w: 16, h: 16 };
+      let minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y;
+      for (const p of pts) {
+        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+      }
+      return { w: Math.max(16, maxX - minX), h: Math.max(16, maxY - minY) };
+    }
     default: return { w: 16, h: 16 };
   }
 }
