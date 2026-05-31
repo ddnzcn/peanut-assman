@@ -591,13 +591,35 @@ export function renderSceneNodes(
           context.stroke();
         }
       } else if (node.data.type === "PathFollow2D") {
+        // Resolve target Path2D by name match; render marker along the path if found
+        let markerX = px, markerY = py;
+        if (node.data.pathNodeName) {
+          const target = findNodeByName(scene.root, node.data.pathNodeName);
+          if (target && target.data.type === "Path2D") {
+            const targetWT = getWorldTransform(scene.root, target.id);
+            const pt = resolvePointOnPath(target.data.points, target.data.closed, node.data.progress);
+            if (pt) {
+              markerX = (targetWT.x + pt.x) * zoom + pxOff;
+              markerY = (targetWT.y + pt.y) * zoom + pyOff;
+            }
+          }
+        }
         context.strokeStyle = "rgba(170,255,170,0.9)";
         context.fillStyle = "rgba(170,255,170,0.6)";
         context.lineWidth = 1.5;
         context.beginPath();
-        context.arc(px, py, 5, 0, Math.PI * 2);
+        context.arc(markerX, markerY, 5, 0, Math.PI * 2);
         context.fill();
         context.stroke();
+        if (node.id === selectedNodeId) {
+          context.setLineDash([2, 2]);
+          context.strokeStyle = "rgba(170,255,170,0.5)";
+          context.beginPath();
+          context.moveTo(px, py);
+          context.lineTo(markerX, markerY);
+          context.stroke();
+          context.setLineDash([]);
+        }
       } else if (node.data.type === "NavRegion2D") {
         const pts = node.data.points;
         if (pts.length >= 3) {
@@ -685,6 +707,43 @@ function getProjectMaps(project: ProjectDocument) {
     animatedTileLookup: _cachedAnimatedTileLookup,
     terrainTileToSetId: _cachedTerrainTileToSetId,
   };
+}
+
+function findNodeByName(root: SceneNode, name: string): SceneNode | null {
+  if (root.name === name) return root;
+  for (const child of root.children) {
+    const found = findNodeByName(child, name);
+    if (found) return found;
+  }
+  return null;
+}
+
+function resolvePointOnPath(points: { x: number; y: number }[], closed: boolean, progress: number): { x: number; y: number } | null {
+  if (points.length === 0) return null;
+  if (points.length === 1) return points[0];
+  const t = Math.max(0, Math.min(1, progress));
+  const segments: { from: number; len: number }[] = [];
+  let total = 0;
+  const lastIndex = closed ? points.length : points.length - 1;
+  for (let i = 0; i < lastIndex; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    segments.push({ from: i, len });
+    total += len;
+  }
+  if (total === 0) return points[0];
+  let target = t * total;
+  for (const seg of segments) {
+    if (target <= seg.len) {
+      const a = points[seg.from];
+      const b = points[(seg.from + 1) % points.length];
+      const u = seg.len > 0 ? target / seg.len : 0;
+      return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+    }
+    target -= seg.len;
+  }
+  return points[points.length - 1];
 }
 
 function getCachedRenderImage(sourceId: string, dataUrl: string, onInvalidate?: () => void) {
