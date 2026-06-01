@@ -1,5 +1,6 @@
 import type { ProjectDocument } from "../types";
-import { createDefaultIdCounters } from "../model/project";
+import { createDefaultIdCounters, createEmptyProject } from "../model/project";
+import { createDefaultScene } from "../scene/helpers";
 
 interface ProjectSaveDocument {
   format: "atlas-manager-project";
@@ -31,6 +32,7 @@ function decodeProject(text: string): ProjectDocument {
   const project = "project" in parsed ? parsed.project : parsed;
   return {
     ...project,
+    scenes: project.scenes ?? [createDefaultScene("scene-1")],
     terrainSets: project.terrainSets ?? [],
     sprites: (project.sprites ?? []).map((sprite) => ({
       ...sprite,

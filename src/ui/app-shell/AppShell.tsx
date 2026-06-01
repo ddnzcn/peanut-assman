@@ -32,18 +32,17 @@ import {
 import { useAppShellController } from "../app-shell/useAppShellController";
 import { AtlasWorkspace, LevelWorkspace } from "../app-shell/workspaces";
 import { AnimationWorkspace } from "../app-shell/timeline";
-import { LevelNavigator } from "../app-shell/navigator";
 import {
   AtlasInspector,
-  LevelInspector,
-  LevelSettingsInspector,
 } from "../app-shell/inspectors";
+import { SceneTree } from "../app-shell/SceneTree";
+import { NodeInspector } from "../app-shell/NodeInspector";
 import { AtlasAssetsPanel, LevelAssetPicker } from "../app-shell/pickers";
 import { TileAssetPreview } from "../app-shell/shared";
 import { clamp } from "../../utils";
-import { sampleBrushFromLevel } from "../../level/editor";
-import type { AnimatedTileAsset, LevelDocument, LevelLayer, ProjectDocument, TileBrush, TilesetTileAsset } from "../../types";
-import "./styles-v2.css";
+import { sampleBrushFromTileMap } from "../../level/editor";
+import type { AnimatedTileAsset, ProjectDocument, TileBrush, TileMapNodeData, TilesetTileAsset } from "../../types";
+import "./styles.css";
 
 // ---------- Animated tile palette cell ----------
 
@@ -72,7 +71,7 @@ function AnimatedTilePaletteCell(props: {
 
   return (
     <button
-      className={props.selected ? "v2-tile-btn active" : "v2-tile-btn"}
+      className={props.selected ? "pn-tile-btn active" : "pn-tile-btn"}
       onClick={props.onClick}
       title={props.animatedTile.name}
       data-tooltip={props.animatedTile.name}
@@ -131,8 +130,7 @@ interface TilePaletteProps {
   savedBrushes: TileBrush[];
   activeBrushId: number | null;
   levelSelection: { x0: number; y0: number; x1: number; y1: number } | null;
-  level: LevelDocument | null;
-  layer: LevelLayer | null;
+  tileMapData: TileMapNodeData | null;
   onSaveBrush: (brush: Omit<TileBrush, "id">) => void;
   onDeleteBrush: (id: number) => void;
   onSelectBrush: (id: number | null) => void;
@@ -149,8 +147,7 @@ function TilePalette({
   savedBrushes,
   activeBrushId,
   levelSelection,
-  level,
-  layer,
+  tileMapData,
   onSaveBrush,
   onDeleteBrush,
   onSelectBrush,
@@ -171,14 +168,14 @@ function TilePalette({
 
   function renderTileGrid(tileList: TilesetTileAsset[]) {
     return (
-      <div className="v2-tile-palette-grid">
+      <div className="pn-tile-palette-grid">
         {tileList.map((tile) => (
           <button
             key={tile.tileId}
             className={
               tile.tileId === selectedPaintTileId
-                ? "v2-tile-btn active"
-                : "v2-tile-btn"
+                ? "pn-tile-btn active"
+                : "pn-tile-btn"
             }
             onClick={() => onSelectTile(tile.tileId)}
             title={tile.name}
@@ -193,8 +190,8 @@ function TilePalette({
   }
 
   return (
-    <div className="v2-tile-palette">
-      <div className="v2-tile-palette-header">
+    <div className="pn-tile-palette">
+      <div className="pn-tile-palette-header">
         <Search size={12} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
         <input
           type="text"
@@ -213,23 +210,23 @@ function TilePalette({
           }}
         />
       </div>
-      <div className="v2-tile-palette-scroll">
+      <div className="pn-tile-palette-scroll">
         {pinnedTiles.length > 0 && (
           <>
-            <div className="v2-tile-palette-section-label">Pinned</div>
+            <div className="pn-tile-palette-section-label">Pinned</div>
             {renderTileGrid(pinnedTiles)}
           </>
         )}
         {recentTiles.length > 0 && (
           <>
-            <div className="v2-tile-palette-section-label">Recent</div>
+            <div className="pn-tile-palette-section-label">Recent</div>
             {renderTileGrid(recentTiles)}
           </>
         )}
         {allTiles.length > 0 && (
           <>
             {(pinnedTiles.length > 0 || recentTiles.length > 0) && (
-              <div className="v2-tile-palette-section-label">All Tiles</div>
+              <div className="pn-tile-palette-section-label">All Tiles</div>
             )}
             {renderTileGrid(allTiles)}
           </>
@@ -241,8 +238,8 @@ function TilePalette({
         )}
         {animatedTiles.length > 0 && (
           <>
-            <div className="v2-tile-palette-section-label">Animated</div>
-            <div className="v2-tile-palette-grid">
+            <div className="pn-tile-palette-section-label">Animated</div>
+            <div className="pn-tile-palette-grid">
               {animatedTiles.map((anim) => (
                 <AnimatedTilePaletteCell
                   key={anim.id}
@@ -257,16 +254,16 @@ function TilePalette({
         )}
 
         {/* ---- Brushes section ---- */}
-        <div className="v2-tile-palette-section-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div className="pn-tile-palette-section-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span>Brushes</span>
           <div style={{ display: "flex", gap: 4 }}>
-            {levelSelection && level && layer && (
+            {levelSelection && tileMapData && (
               <button
-                className="v2-tool-btn"
+                className="pn-tool-btn"
                 style={{ width: 18, height: 18, fontSize: "0.65rem", padding: 0 }}
                 title="Save selection as brush"
                 onClick={() => {
-                  const sampled = sampleBrushFromLevel(level, layer, levelSelection.x0, levelSelection.y0, levelSelection.x1, levelSelection.y1);
+                  const sampled = sampleBrushFromTileMap(tileMapData, levelSelection.x0, levelSelection.y0, levelSelection.x1, levelSelection.y1);
                   const w = Math.abs(levelSelection.x1 - levelSelection.x0) + 1;
                   onSaveBrush({ name: `brush_${String(savedBrushes.length + 1).padStart(2, "0")}`, ...sampled, width: w });
                 }}
@@ -276,7 +273,7 @@ function TilePalette({
             )}
             {selectedPaintTileId > 0 && (
               <button
-                className="v2-tool-btn"
+                className="pn-tool-btn"
                 style={{ width: 18, height: 18, fontSize: "0.65rem", padding: 0 }}
                 title="Save current tile as 1×1 brush"
                 onClick={() => onSaveBrush({ name: `brush_${String(savedBrushes.length + 1).padStart(2, "0")}`, width: 1, height: 1, tiles: [selectedPaintTileId] })}
@@ -295,16 +292,16 @@ function TilePalette({
             {savedBrushes.map((brush) => (
               <div
                 key={brush.id}
-                className={brush.id === activeBrushId ? "v2-brush-row active" : "v2-brush-row"}
+                className={brush.id === activeBrushId ? "pn-brush-row active" : "pn-brush-row"}
                 onClick={() => onSelectBrush(brush.id === activeBrushId ? null : brush.id)}
               >
                 <BrushPreview brush={brush} project={project} scale={1} />
-                <span className="v2-brush-name">{brush.name}</span>
+                <span className="pn-brush-name">{brush.name}</span>
                 <span style={{ marginLeft: "auto", fontSize: "0.65rem", color: "var(--text-muted)", flexShrink: 0 }}>
                   {brush.width}×{brush.height}
                 </span>
                 <button
-                  className="v2-tool-btn"
+                  className="pn-tool-btn"
                   style={{ width: 16, height: 16, padding: 0, flexShrink: 0 }}
                   title="Delete brush"
                   onClick={(e) => { e.stopPropagation(); onDeleteBrush(brush.id); }}
@@ -334,7 +331,7 @@ function V2ToolBtn({ label, shortcut, active, onClick, children }: V2ToolBtnProp
   const tooltip = shortcut ? `${label} (${shortcut})` : label;
   return (
     <button
-      className={active ? "v2-tool-btn active" : "v2-tool-btn"}
+      className={active ? "pn-tool-btn active" : "pn-tool-btn"}
       onClick={onClick}
       aria-label={tooltip}
       data-tooltip={tooltip}
@@ -344,15 +341,17 @@ function V2ToolBtn({ label, shortcut, active, onClick, children }: V2ToolBtnProp
   );
 }
 
-// ---------- AppShellV2 ----------
+// ---------- AppShell ----------
 
-export function AppShellV2() {
+export function AppShell() {
   const controller = useAppShellController();
   const {
     state,
     dispatch,
-    level,
-    layer,
+    scene,
+    selectedNode,
+    tileMapData,
+    sceneTileMapData,
     atlas,
     selectedTerrainSet,
     selectedSourceImage,
@@ -391,6 +390,7 @@ export function AppShellV2() {
     atlasStageRef,
     levelStageRef,
     levelCanvasRef,
+    webglCanvasRef,
     levelCursorClass,
     importImages,
     loadProject,
@@ -430,7 +430,7 @@ export function AppShellV2() {
     rectDragStart,
     rectDragCurrent,
     createExampleProject,
-    createLevelLayer,
+    createNode,
     createAnimation,
     handleAnimationTick,
     levelSelection,
@@ -438,6 +438,8 @@ export function AppShellV2() {
     handleLevelPointerLeave,
     cursorTile,
     clipboardBrush,
+    objectPlaceType,
+    setObjectPlaceType,
     handleCopy,
     handleCut,
     handlePaste,
@@ -464,31 +466,31 @@ export function AppShellV2() {
   }
 
   return (
-    <div className={`v2-shell workspace-${workspace}`}>
+    <div className={`pn-shell workspace-${workspace}`}>
       {/* ---- TOP BAR ---- */}
-      <header className="v2-topbar">
-        <div className="v2-logo">
-          <span className="v2-logo-dot" />
+      <header className="pn-topbar">
+        <div className="pn-logo">
+          <span className="pn-logo-dot" />
           Peanut
         </div>
 
-        <nav className="v2-workspace-tabs">
+        <nav className="pn-workspace-tabs">
           <button
-            className={workspace === "atlas" ? "v2-tab-btn active" : "v2-tab-btn"}
+            className={workspace === "atlas" ? "pn-tab-btn active" : "pn-tab-btn"}
             onClick={() => dispatch({ type: "setWorkspace", workspace: "atlas" })}
           >
             <Package size={13} />
             Atlas
           </button>
           <button
-            className={workspace === "level" ? "v2-tab-btn active" : "v2-tab-btn"}
+            className={workspace === "level" ? "pn-tab-btn active" : "pn-tab-btn"}
             onClick={() => dispatch({ type: "setWorkspace", workspace: "level" })}
           >
             <Map size={13} />
             Level
           </button>
           <button
-            className={workspace === "animation" ? "v2-tab-btn active" : "v2-tab-btn"}
+            className={workspace === "animation" ? "pn-tab-btn active" : "pn-tab-btn"}
             onClick={() => dispatch({ type: "setWorkspace", workspace: "animation" })}
           >
             <Film size={13} />
@@ -496,7 +498,7 @@ export function AppShellV2() {
           </button>
         </nav>
 
-        <div className="v2-topbar-actions">
+        <div className="pn-topbar-actions">
           <details className="app-menu">
             <summary className="app-menu-trigger" style={{ fontSize: "0.82rem" }}>
               File <ChevronDown size={10} style={{ display: "inline", marginLeft: 2 }} />
@@ -551,7 +553,7 @@ export function AppShellV2() {
               <button
                 className="app-menu-item primary app-menu-item-primary"
                 onClick={exportLevel}
-                disabled={!level}
+                disabled={!scene}
               >
                 <Download size={14} />
                 <span>Export Level</span>
@@ -562,89 +564,20 @@ export function AppShellV2() {
         </div>
       </header>
 
-      {/* ---- LEFT NAVIGATOR (level mode only) ---- */}
-      {workspace === "level" && level ? (
-        <aside className="v2-sidebar-left">
-          <LevelNavigator
-            levels={state.project.levels}
-            selectedLevelId={level.id}
-            selectedLayerId={layer?.id ?? null}
-            onSelectLevel={(levelId) => {
-              dispatch({ type: "setSelectedLevel", levelId });
-              dispatch({ type: "setSelectedLayer", layerId: null });
-            }}
-            onSelectLayer={(layerId) => dispatch({ type: "setSelectedLayer", layerId })}
-            onRenameLevel={(levelId, name) => {
-              const target = state.project.levels.find((e) => e.id === levelId);
-              if (!target) return;
-              dispatch({ type: "updateLevel", level: { ...target, name } });
-            }}
-            onRenameLayer={(layerId, name) =>
-              dispatch({
-                type: "updateLevel",
-                level: {
-                  ...level,
-                  layers: level.layers.map((e) => (e.id === layerId ? { ...e, name } : e)),
-                },
-              })
-            }
-            onAddLevel={() => {
-              const nextId = `level-${state.project.idCounters.level}`;
-              const layerBase = state.project.idCounters.layer;
-              dispatch({
-                type: "addLevel",
-                level: {
-                  id: nextId,
-                  name: `level${String(state.project.idCounters.level).padStart(2, "0")}`,
-                  mapWidthTiles: level.mapWidthTiles,
-                  mapHeightTiles: level.mapHeightTiles,
-                  tileWidth: level.tileWidth,
-                  tileHeight: level.tileHeight,
-                  chunkWidthTiles: level.chunkWidthTiles,
-                  chunkHeightTiles: level.chunkHeightTiles,
-                  tileIds: [...level.tileIds],
-                  tilesetIds: [...level.tilesetIds],
-                  layers: [
-                    createLevelLayer(`layer-${layerBase}`, "Ground", level.mapWidthTiles, level.mapHeightTiles, { hasTiles: true }),
-                    createLevelLayer(`layer-${layerBase + 1}`, "Gameplay", level.mapWidthTiles, level.mapHeightTiles, { hasCollision: true, hasMarkers: true }),
-                    createLevelLayer(`layer-${layerBase + 2}`, "Foreground", level.mapWidthTiles, level.mapHeightTiles, { hasTiles: true }),
-                  ],
-                  chunks: {},
-                  collisions: [],
-                  markers: [],
-                },
-              });
-            }}
-            onRemoveLevel={() => dispatch({ type: "removeLevel", levelId: level.id })}
-            onAddLayer={() =>
-              dispatch({
-                type: "addLayer",
-                levelId: level.id,
-                layer: createLevelLayer(
-                  `layer-${state.project.idCounters.layer}`,
-                  `Layer ${level.layers.length + 1}`,
-                  level.mapWidthTiles,
-                  level.mapHeightTiles,
-                  { hasTiles: true },
-                ),
-              })
-            }
-            onMoveLayerUp={() =>
-              layer ? dispatch({ type: "reorderLayer", levelId: level.id, layerId: layer.id, direction: "up" }) : undefined
-            }
-            onMoveLayerDown={() =>
-              layer ? dispatch({ type: "reorderLayer", levelId: level.id, layerId: layer.id, direction: "down" }) : undefined
-            }
-            onReorderLayer={(layerId, toIndex) =>
-              dispatch({ type: "reorderLayer", levelId: level.id, layerId, toIndex })
-            }
-            onRemoveLayer={() =>
-              layer ? dispatch({ type: "removeLayer", levelId: level.id, layerId: layer.id }) : undefined
-            }
+      {/* ---- LEFT NAVIGATOR ---- */}
+      {workspace === "level" && scene ? (
+        <aside className="pn-sidebar-left" style={{ padding: 0 }}>
+          <SceneTree
+            scenes={state.project.scenes}
+            selectedSceneId={state.editor.selectedSceneId}
+            selectedNodeId={state.editor.selectedNodeId}
+            nodeIdCounter={state.project.idCounters.node}
+            sceneIdCounter={state.project.idCounters.scene}
+            dispatch={dispatch}
           />
         </aside>
       ) : workspace === "atlas" ? (
-        <aside className="v2-sidebar-left">
+        <aside className="pn-sidebar-left">
           <AtlasAssetsPanel
             project={state.project}
             sourceImages={state.project.sourceImages}
@@ -668,7 +601,7 @@ export function AppShellV2() {
       ) : null}
 
       {/* ---- MAIN WORKSPACE ---- */}
-      <section className="v2-workspace">
+      <section className="pn-workspace">
         {workspace === "atlas" ? (
           <AtlasWorkspace
             atlas={atlas}
@@ -723,10 +656,14 @@ export function AppShellV2() {
           />
         ) : (
           <LevelWorkspace
-            level={level}
+            tileMapData={tileMapData}
+            sceneTileMapData={sceneTileMapData}
+            scene={scene}
+            selectedNode={selectedNode}
             levelZoom={state.editor.levelZoom}
             levelPan={levelPan}
             levelCanvasRef={levelCanvasRef}
+            webglCanvasRef={webglCanvasRef}
             stageRef={levelStageRef}
             cursorClass={levelCursorClass}
             rectDragStart={rectDragStart}
@@ -749,20 +686,21 @@ export function AppShellV2() {
             onStagePanStart={(event) => handlePanStart(event, "level", true)}
             onStagePanMove={handlePanMove}
             onStagePanEnd={handlePanEnd}
+            dispatch={dispatch}
           />
         )}
       </section>
 
       {/* ---- RIGHT PANEL (inspector + palette) ---- */}
       {workspace !== "animation" && (
-        <aside className="v2-sidebar-right">
+        <aside className="pn-sidebar-right">
           {/* Inspector section */}
-          <div className="v2-right-inspector">
-            <div className="v2-panel-header">
+          <div className="pn-right-inspector">
+            <div className="pn-panel-header">
               <Settings size={12} />
               <h3>Inspector</h3>
             </div>
-            <div className="v2-right-inspector-content">
+            <div className="pn-right-inspector-content">
             {workspace === "atlas" ? (
               <AtlasInspector
                 atlas={atlas}
@@ -811,50 +749,12 @@ export function AppShellV2() {
                 selectedSliceCount={state.editor.selectedSliceIds.length}
                 onAddSelectedToAtlas={addSelectedSlicesToAtlas}
                 onAddSelectedToLevel={addSelectedSlicesToLevel}
-                currentLevelName={level?.name ?? null}
+                currentLevelName={selectedNode?.name ?? null}
                 onCreateSlices={createAtlasSlices}
                 onSetModule={setAtlasModule}
               />
-            ) : level ? (
-              layer ? (
-                <LevelInspector
-                  level={level}
-                  layer={layer}
-                  levelTool={state.editor.levelTool}
-                  dispatch={dispatch}
-                  project={state.project}
-                  recentTileIds={recentTileIds}
-                  recentTerrainSetIds={recentTerrainSetIds}
-                  onSelectRecentTile={(tileId) => {
-                    setSelectedPaintTileId(tileId);
-                    pushRecentTile(tileId);
-                    dispatch({ type: "setLevelTool", tool: "brush" });
-                  }}
-                  onSelectRecentTerrainSet={(terrainSetId) => {
-                    dispatch({ type: "setSelectedTerrainSet", terrainSetId });
-                    pushRecentTerrainSet(terrainSetId);
-                    dispatch({ type: "setLevelTool", tool: "terrain" });
-                  }}
-                />
-              ) : (
-                <LevelSettingsInspector
-                  level={level}
-                  dispatch={dispatch}
-                  project={state.project}
-                  recentTileIds={recentTileIds}
-                  recentTerrainSetIds={recentTerrainSetIds}
-                  onSelectRecentTile={(tileId) => {
-                    setSelectedPaintTileId(tileId);
-                    pushRecentTile(tileId);
-                    dispatch({ type: "setLevelTool", tool: "brush" });
-                  }}
-                  onSelectRecentTerrainSet={(terrainSetId) => {
-                    dispatch({ type: "setSelectedTerrainSet", terrainSetId });
-                    pushRecentTerrainSet(terrainSetId);
-                    dispatch({ type: "setLevelTool", tool: "terrain" });
-                  }}
-                />
-              )
+            ) : selectedNode && scene ? (
+              <NodeInspector scene={scene} node={selectedNode} project={state.project} dispatch={dispatch} />
             ) : null}
             </div>
           </div>
@@ -862,12 +762,12 @@ export function AppShellV2() {
           {/* Divider and tile palette (level mode only) */}
           {workspace === "level" && (
             <>
-              <div className="v2-right-divider" />
-              <div className="v2-panel-header" style={{ paddingBottom: "0.35rem" }}>
+              <div className="pn-right-divider" />
+              <div className="pn-panel-header" style={{ paddingBottom: "0.35rem" }}>
                 <Layers size={12} />
                 <h3>Tile Palette</h3>
                 <button
-                  className={assetTrayOpen ? "v2-tool-btn active" : "v2-tool-btn"}
+                  className={assetTrayOpen ? "pn-tool-btn active" : "pn-tool-btn"}
                   style={{ width: 22, height: 22 }}
                   onClick={() => setAssetTrayOpen(!assetTrayOpen)}
                   title="Add tiles / manage assets"
@@ -886,8 +786,7 @@ export function AppShellV2() {
                 savedBrushes={state.editor.savedBrushes ?? []}
                 activeBrushId={state.editor.activeBrushId ?? null}
                 levelSelection={levelSelection}
-                level={level}
-                layer={layer}
+                tileMapData={tileMapData}
                 onSaveBrush={(brush) => dispatch({ type: "saveBrush", brush })}
                 onDeleteBrush={(brushId) => dispatch({ type: "deleteBrush", brushId })}
                 onSelectBrush={(brushId) => {
@@ -907,7 +806,7 @@ export function AppShellV2() {
       {workspace === "level" && assetTrayOpen && (
         <LevelAssetPicker
           project={state.project}
-          level={level}
+          tileMapData={tileMapData}
           sourceImages={state.project.sourceImages}
           selectedSourceImageId={selectedSourceImage?.id ?? null}
           selectedSliceIds={state.editor.selectedSliceIds}
@@ -948,14 +847,14 @@ export function AppShellV2() {
           onSetTerrainSet={(terrainSetId) => dispatch({ type: "setSelectedTerrainSet", terrainSetId })}
           onRemoveTerrainSet={(terrainSetId) => dispatch({ type: "removeTerrainSet", terrainSetId })}
           onCreateTerrainSet={() => {
-            if (!level) return;
+            if (!selectedNode) return;
             dispatch({
               type: "upsertTerrainSet",
               terrainSet: {
                 id: state.project.idCounters.terrainSet,
-                name: `${level.name}_terrain`,
+                name: `${selectedNode.name}_terrain`,
                 tilesetId: 0,
-                levelId: level.id,
+                sceneNodeId: selectedNode.id,
                 slots: { 0: selectedPaintTileId || effectiveLevelTileIds[0] || 0 },
                 mode: "cardinal",
                 blobMap: {},
@@ -992,11 +891,11 @@ export function AppShellV2() {
 
       {/* ---- FLOATING TOOLBAR ---- */}
       {workspace !== "animation" && (
-        <footer className="v2-toolbar">
+        <footer className="pn-toolbar">
           {workspace === "level" ? (
             <>
               {/* History group */}
-              <div className="v2-dock-group">
+              <div className="pn-dock-group">
                 <V2ToolBtn label="Undo" shortcut="Cmd/Ctrl+Z" active={false} onClick={() => dispatch({ type: "undo" })}>
                   <Undo2 />
                 </V2ToolBtn>
@@ -1006,8 +905,8 @@ export function AppShellV2() {
               </div>
 
               {/* Active tile group */}
-              <div className="v2-dock-group">
-                <div className="v2-active-tile-preview" title="Current brush tile" onClick={() => setAssetTrayOpen(true)} style={{ cursor: "pointer" }}>
+              <div className="pn-dock-group">
+                <div className="pn-active-tile-preview" title="Current brush tile" onClick={() => setAssetTrayOpen(true)} style={{ cursor: "pointer" }}>
                   <TileAssetPreview
                     project={state.project}
                     tile={state.project.tiles.find((t) => t.tileId === selectedPaintTileId) ?? null}
@@ -1017,7 +916,7 @@ export function AppShellV2() {
               </div>
 
               {/* Tools group */}
-              <div className="v2-dock-group">
+              <div className="pn-dock-group">
                 <V2ToolBtn label="Select" shortcut="V" active={state.editor.levelTool === "select"} onClick={() => dispatch({ type: "setLevelTool", tool: "select" })}>
                   <MousePointer2 />
                 </V2ToolBtn>
@@ -1036,16 +935,40 @@ export function AppShellV2() {
                 <V2ToolBtn label="Fill" shortcut="G" active={state.editor.levelTool === "bucket"} onClick={() => dispatch({ type: "setLevelTool", tool: "bucket" })}>
                   <PaintBucket />
                 </V2ToolBtn>
-                <V2ToolBtn label="Collision" shortcut="C" active={state.editor.levelTool === "collisionRect"} onClick={() => dispatch({ type: "setLevelTool", tool: "collisionRect" })}>
-                  <Shield />
+                <V2ToolBtn label={`Place ${objectPlaceType}`} shortcut="O" active={state.editor.levelTool === "objectPlace"} onClick={() => dispatch({ type: "setLevelTool", tool: "objectPlace" })}>
+                  <Plus />
                 </V2ToolBtn>
-                <V2ToolBtn
-                  label="Marker"
-                  shortcut="M"
-                  active={state.editor.levelTool === "markerPoint" || state.editor.levelTool === "markerRect"}
-                  onClick={() => dispatch({ type: "setLevelTool", tool: "markerPoint" })}
-                >
-                  <MapPin />
+                {state.editor.levelTool === "objectPlace" && (
+                  <select
+                    value={objectPlaceType}
+                    onChange={(e) => setObjectPlaceType(e.target.value as import("../../types").SceneNodeType)}
+                    style={{
+                      fontSize: "0.7rem",
+                      padding: "0.15rem 0.3rem",
+                      background: "rgba(0,0,0,0.4)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "0.3rem",
+                      color: "inherit",
+                    }}
+                  >
+                    <option value="Sprite">Sprite</option>
+                    <option value="AnimatedSprite">Anim Sprite</option>
+                    <option value="CollisionShape">Collision</option>
+                    <option value="Area">Area</option>
+                    <option value="Light2D">Light</option>
+                    <option value="Camera2D">Camera</option>
+                    <option value="Spawner">Spawner</option>
+                    <option value="Timer">Timer</option>
+                    <option value="VisibilityNotifier">VisNotifier</option>
+                    <option value="Decal">Decal</option>
+                    <option value="Path2D">Path</option>
+                    <option value="PathFollow2D">PathFollow</option>
+                    <option value="NavRegion2D">NavRegion</option>
+                    <option value="Node2D">Node2D</option>
+                  </select>
+                )}
+                <V2ToolBtn label="Select Object" shortcut="S" active={state.editor.levelTool === "objectSelect"} onClick={() => dispatch({ type: "setLevelTool", tool: "objectSelect" })}>
+                  <MousePointer2 />
                 </V2ToolBtn>
                 <V2ToolBtn label="Hand" shortcut="H" active={state.editor.levelTool === "hand"} onClick={() => dispatch({ type: "setLevelTool", tool: "hand" })}>
                   <Move />
@@ -1053,7 +976,7 @@ export function AppShellV2() {
               </div>
 
               {/* Zoom group */}
-              <div className="v2-dock-group">
+              <div className="pn-dock-group">
                 <V2ToolBtn label="Zoom Out" active={false} onClick={() => dispatch({ type: "setLevelZoom", zoom: clamp(state.editor.levelZoom * 0.9, 0.5, 8) })}>
                   <ZoomOut />
                 </V2ToolBtn>
@@ -1068,7 +991,7 @@ export function AppShellV2() {
           ) : workspace === "atlas" && atlasModule === "slicer" ? (
             <>
               {/* Slicer mode group */}
-              <div className="v2-dock-group">
+              <div className="pn-dock-group">
                 <V2ToolBtn label="Grid Slicer" active={state.editor.slicerMode === "grid"} onClick={() => dispatch({ type: "setSlicerMode", mode: "grid" })}>
                   <Grid3x3 />
                 </V2ToolBtn>
@@ -1078,7 +1001,7 @@ export function AppShellV2() {
               </div>
 
               {/* Zoom group */}
-              <div className="v2-dock-group">
+              <div className="pn-dock-group">
                 <V2ToolBtn label="Zoom Out" active={false} onClick={() => dispatch({ type: "setSlicerZoom", zoom: clamp(state.editor.slicerZoom * 0.9, 0.25, 8) })}>
                   <ZoomOut />
                 </V2ToolBtn>

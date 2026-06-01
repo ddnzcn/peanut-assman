@@ -1,3 +1,38 @@
+import type { SceneDocument, SceneNode } from "./scene/types";
+
+export type { SceneDocument, SceneNode };
+export type {
+  SceneNodeType,
+  SceneNodeData,
+  Transform2D,
+  TileMapNodeData,
+  TileMapChunk,
+  TileMapCell,
+  TileMapProjection,
+  StaggerAxis,
+  StaggerIndex,
+  SpriteNodeData,
+  CollisionShapeNodeData,
+  AreaNodeData,
+  Light2DNodeData,
+  RootNodeData,
+  Node2DData,
+  CollisionShapeKind,
+  AreaShapeKind,
+  Light2DVariant,
+  AnimatedSpriteNodeData,
+  Camera2DNodeData,
+  SpawnerNodeData,
+  TimerNodeData,
+  VisibilityNotifierNodeData,
+  DecalBlendMode,
+  DecalNodeData,
+  PathPoint,
+  Path2DNodeData,
+  PathFollow2DNodeData,
+  NavRegion2DNodeData,
+} from "./scene/types";
+
 export type PotSize = 64 | 128 | 256 | 512 | 1024;
 
 export type WorkspaceMode = "atlas" | "tileset" | "level" | "animation";
@@ -10,12 +45,10 @@ export type LevelTool =
   | "bucket"
   | "select"
   | "hand"
-  | "collisionRect"
-  | "markerPoint"
-  | "markerRect";
+  | "objectPlace"
+  | "objectSelect"
+  | "light";
 export type SlicerMode = "grid" | "manual";
-export type CollisionTypeName = "Solid" | "OneWay" | "Trigger" | "Hurt";
-export type MarkerShapeName = "Point" | "Rect";
 export type AutotileMode = "cardinal" | "subtile" | "blob47" | "rpgmaker";
 
 export interface BuildOptions {
@@ -119,88 +152,10 @@ export interface TerrainSet {
   id: number;
   name: string;
   tilesetId: number;
-  levelId?: string;
+  sceneNodeId?: string;
   slots: TerrainSetSlots;
   mode: AutotileMode;
   blobMap?: Record<number, number>;
-}
-
-export interface TileCell {
-  tileId: number;
-  flags: number;
-}
-
-export interface TileChunk {
-  layerId: string;
-  chunkX: number;
-  chunkY: number;
-  tiles: TileCell[];
-}
-
-export interface CollisionObject {
-  id: number;
-  layerId: string;
-  type: CollisionTypeName;
-  flags: number;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  userData0: number;
-  userData1: number;
-}
-
-export interface MarkerObject {
-  id: number;
-  layerId: string;
-  shape: MarkerShapeName;
-  flags: number;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  type: string;
-  event: string;
-  name: string;
-  userData0: number;
-  userData1: number;
-  properties: Record<string, string>;
-}
-
-export interface LevelLayer {
-  id: string;
-  name: string;
-  visible: boolean;
-  locked: boolean;
-  repeatX: boolean;
-  repeatY: boolean;
-  foreground: boolean;
-  hasTiles: boolean;
-  hasCollision: boolean;
-  hasMarkers: boolean;
-  parallaxX: number;
-  parallaxY: number;
-  offsetX: number;
-  offsetY: number;
-  widthTiles: number;
-  heightTiles: number;
-}
-
-export interface LevelDocument {
-  id: string;
-  name: string;
-  mapWidthTiles: number;
-  mapHeightTiles: number;
-  tileWidth: number;
-  tileHeight: number;
-  chunkWidthTiles: number;
-  chunkHeightTiles: number;
-  tileIds: number[];
-  tilesetIds: number[];
-  layers: LevelLayer[];
-  chunks: Record<string, TileChunk>;
-  collisions: CollisionObject[];
-  markers: MarkerObject[];
 }
 
 export interface IdCounters {
@@ -209,10 +164,8 @@ export interface IdCounters {
   sprite: number;
   tileset: number;
   tile: number;
-  level: number;
-  layer: number;
-  collision: number;
-  marker: number;
+  scene: number;
+  node: number;
   terrainSet: number;
   spriteAnimation: number;
   animatedTile: number;
@@ -229,7 +182,7 @@ export interface ProjectDocument {
   terrainSets: TerrainSet[];
   spriteAnimations: SpriteAnimation[];
   animatedTiles: AnimatedTileAsset[];
-  levels: LevelDocument[];
+  scenes: SceneDocument[];
   atlasSettings: BuildOptions;
   idCounters: IdCounters;
 }
@@ -262,7 +215,7 @@ export interface TileBrush {
   name: string;
   width: number;
   height: number;
-  tiles: number[]; // row-major tileIds, 0 = empty cell
+  tiles: number[];
 }
 
 export interface EditorState {
@@ -275,10 +228,8 @@ export interface EditorState {
   selectedAnimatedTileId: number | null;
   animCurrentFrame: number;
   animIsPlaying: boolean;
-  selectedLevelId: string | null;
-  selectedLayerId: string | null;
-  selectedCollisionId: number | null;
-  selectedMarkerId: number | null;
+  selectedSceneId: string | null;
+  selectedNodeId: string | null;
   atlasHoveredSpriteId: number | null;
   levelTool: LevelTool;
   levelPickerTab: LevelPickerTab;
@@ -301,30 +252,14 @@ export interface AppState {
   editor: EditorState;
   error: string | null;
   busy: boolean;
-  undoStack: HistorySnapshot[];
-  redoStack: HistorySnapshot[];
+  undoStack: SceneHistorySnapshot[];
+  redoStack: SceneHistorySnapshot[];
 }
 
-export interface LevelHistoryPatch {
-  name?: string;
-  mapWidthTiles?: number;
-  mapHeightTiles?: number;
-  tileWidth?: number;
-  tileHeight?: number;
-  chunkWidthTiles?: number;
-  chunkHeightTiles?: number;
-  tileIds?: number[];
-  tilesetIds?: number[];
-  layers?: LevelLayer[];
-  chunks?: Record<string, TileChunk | null>;
-  collisions?: CollisionObject[];
-  markers?: MarkerObject[];
-}
-
-export interface HistorySnapshot {
-  levelId: string;
-  previousPatch: LevelHistoryPatch;
-  nextPatch: LevelHistoryPatch;
+export interface SceneHistorySnapshot {
+  sceneId: string;
+  previousRoot: SceneNode;
+  nextRoot: SceneNode;
 }
 
 export interface SheetSlicePreview {
@@ -393,10 +328,6 @@ export type ProjectAction =
   | { type: "toggleSliceSelection"; sliceId: string }
   | { type: "setSelectedTileset"; tilesetId: number | null }
   | { type: "setSelectedTerrainSet"; terrainSetId: number | null }
-  | { type: "setSelectedLevel"; levelId: string | null }
-  | { type: "setSelectedLayer"; layerId: string | null }
-  | { type: "setSelectedCollision"; collisionId: number | null }
-  | { type: "setSelectedMarker"; markerId: number | null }
   | { type: "setLevelTool"; tool: LevelTool }
   | { type: "setSlicerZoom"; zoom: number }
   | { type: "setLevelZoom"; zoom: number }
@@ -412,7 +343,7 @@ export type ProjectAction =
   | { type: "removeSourceImage"; sourceImageId: string }
   | { type: "addSlices"; slices: SliceAsset[]; sprites?: SpriteAsset[] }
   | { type: "addSlicesToAtlas"; sliceIds: string[] }
-  | { type: "addLevelTiles"; levelId: string; sliceIds: string[] }
+  | { type: "addSceneTiles"; sceneId: string; nodeId: string; sliceIds: string[] }
   | { type: "removeSlicesFromAtlas"; sliceIds: string[] }
   | { type: "updateSliceKinds"; sliceIds: string[]; kind: SliceKind }
   | { type: "publishTileset"; tileset: TilesetAsset; tiles: TilesetTileAsset[]; sprites: SpriteAsset[] }
@@ -428,16 +359,23 @@ export type ProjectAction =
   | { type: "setAnimPlaying"; playing: boolean }
   | { type: "setLevelPickerTab"; tab: LevelPickerTab }
   | { type: "reorderSprites"; fromIndex: number; toIndex: number }
-  | { type: "addLevel"; level: LevelDocument }
-  | { type: "removeLevel"; levelId: string }
-  | { type: "addLayer"; levelId: string; layer: LevelLayer }
-  | { type: "reorderLayer"; levelId: string; layerId: string; direction?: "up" | "down"; toIndex?: number }
-  | { type: "removeLayer"; levelId: string; layerId: string }
-  | { type: "updateLevel"; level: LevelDocument }
-  | { type: "updateLevelSilent"; level: LevelDocument }
-  | { type: "commitLevelStroke"; baseLevel: LevelDocument; currentLevel: LevelDocument }
-  | { type: "replaceLevelChunks"; levelId: string; chunks: Record<string, TileChunk> }
   | { type: "setAtlasHoveredSprite"; spriteId: number | null }
   | { type: "saveBrush"; brush: Omit<TileBrush, "id"> }
   | { type: "deleteBrush"; brushId: number }
-  | { type: "setActiveBrush"; brushId: number | null };
+  | { type: "setActiveBrush"; brushId: number | null }
+  // Scene graph actions
+  | { type: "selectScene"; sceneId: string | null }
+  | { type: "selectNode"; nodeId: string | null }
+  | { type: "addScene"; scene: SceneDocument }
+  | { type: "removeScene"; sceneId: string }
+  | { type: "renameScene"; sceneId: string; name: string }
+  | { type: "addChildNode"; sceneId: string; parentId: string; node: SceneNode; index?: number }
+  | { type: "removeNode"; sceneId: string; nodeId: string }
+  | { type: "duplicateNode"; sceneId: string; nodeId: string }
+  | { type: "moveNode"; sceneId: string; nodeId: string; newParentId: string; index: number }
+  | { type: "reorderNode"; sceneId: string; parentId: string; nodeId: string; toIndex: number }
+  | { type: "updateSceneNode"; sceneId: string; nodeId: string; patch: Partial<SceneNode> }
+  | { type: "updateSceneNodeData"; sceneId: string; nodeId: string; data: SceneNode["data"] }
+  | { type: "updateSceneNodeSilent"; sceneId: string; nodeId: string; patch: Partial<SceneNode> }
+  | { type: "updateSceneNodeDataSilent"; sceneId: string; nodeId: string; data: SceneNode["data"] }
+  | { type: "commitSceneStroke"; sceneId: string; baseRoot: SceneNode; currentRoot: SceneNode };

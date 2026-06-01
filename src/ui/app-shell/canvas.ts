@@ -1,8 +1,9 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { buildAnimatedTileLookup, resolveAnimatedTileSliceId } from "../../animation/playback";
+import { buildAnimatedTileLookup, getFrameAtTime, resolveAnimatedTileSliceId } from "../../animation/playback";
 import { getTileAt } from "../../level/editor";
 import { calculateBlob47Mask, getTerrainSetMarkerTileId } from "../../terrain";
-import type { LevelDocument, LevelLayer, ProjectDocument, SliceRect, SourceImageAsset, TileChunk } from "../../types";
+import type { ProjectDocument, SceneDocument, SceneNode, SliceRect, SourceImageAsset, TileMapChunk, TileMapNodeData } from "../../types";
+import { collectTileMapInstances, flattenByRenderLayer, getWorldTransform, type TileMapInstance } from "../../scene/helpers";
 
 export function getImagePoint(
   event: ReactPointerEvent<HTMLDivElement>,
@@ -10,34 +11,41 @@ export function getImagePoint(
   source: SourceImageAsset,
   zoom: number,
 ) {
-  if (!element) {
-    return null;
-  }
+  if (!element) return null;
   const bounds = element.getBoundingClientRect();
   const x = Math.floor((event.clientX - bounds.left) / zoom);
   const y = Math.floor((event.clientY - bounds.top) / zoom);
-  if (x < 0 || y < 0 || x >= source.width || y >= source.height) {
-    return null;
-  }
+  if (x < 0 || y < 0 || x >= source.width || y >= source.height) return null;
   return { x, y };
 }
 
 export function getCanvasTile(
   event: ReactPointerEvent<HTMLCanvasElement>,
   canvas: HTMLCanvasElement | null,
-  level: LevelDocument,
+  tileMap: TileMapNodeData,
   zoom: number,
+  offsetX = 0,
+  offsetY = 0,
 ) {
-  if (!canvas) {
-    return null;
-  }
+  if (!canvas) return null;
   const bounds = canvas.getBoundingClientRect();
-  const x = Math.floor((event.clientX - bounds.left) / (level.tileWidth * zoom));
-  const y = Math.floor((event.clientY - bounds.top) / (level.tileHeight * zoom));
-  if (x < 0 || y < 0 || x >= level.mapWidthTiles || y >= level.mapHeightTiles) {
-    return null;
-  }
-  return { x, y };
+  const px = event.clientX - bounds.left - offsetX * zoom;
+  const py = event.clientY - bounds.top - offsetY * zoom;
+  const tile = screenToTile(px, py, tileMap, zoom);
+  if (tile.x < 0 || tile.y < 0 || tile.x >= tileMap.mapWidthTiles || tile.y >= tileMap.mapHeightTiles) return null;
+  return tile;
+}
+
+export function getCanvasPixel(
+  event: ReactPointerEvent<HTMLCanvasElement>,
+  canvas: HTMLCanvasElement | null,
+  zoom: number,
+): { x: number; y: number } | null {
+  if (!canvas) return null;
+  const bounds = canvas.getBoundingClientRect();
+  const x = (event.clientX - bounds.left) / zoom;
+  const y = (event.clientY - bounds.top) / zoom;
+  return { x: Math.round(x), y: Math.round(y) };
 }
 
 export function rectStyle(rect: SliceRect, zoom: number) {
@@ -47,6 +55,73 @@ export function rectStyle(rect: SliceRect, zoom: number) {
     width: rect.width * zoom,
     height: rect.height * zoom,
   };
+}
+
+export function tileToScreen(
+  tileX: number,
+  tileY: number,
+  tileMap: TileMapNodeData,
+  zoom: number,
+): { x: number; y: number } {
+  const tw = tileMap.tileWidth * zoom;
+  const th = tileMap.tileHeight * zoom;
+  if (tileMap.projection === "isometric-diamond") {
+    return {
+      x: (tileX - tileY) * (tw / 2) + (tileMap.mapHeightTiles * tw / 2),
+      y: (tileX + tileY) * (th / 2),
+    };
+  }
+  if (tileMap.projection === "isometric-staggered") {
+    return {
+      x: tileX * tw + (tileY & 1) * (tw / 2),
+      y: tileY * (th / 2),
+    };
+  }
+  return { x: tileX * tw, y: tileY * th };
+}
+
+export function screenToTile(
+  px: number,
+  py: number,
+  tileMap: TileMapNodeData,
+  zoom: number,
+): { x: number; y: number } {
+  const tw = tileMap.tileWidth * zoom;
+  const th = tileMap.tileHeight * zoom;
+  if (tileMap.projection === "isometric-diamond") {
+    const adjusted = px - (tileMap.mapHeightTiles * tw / 2);
+    const halfW = tw / 2;
+    const halfH = th / 2;
+    return {
+      x: Math.floor((adjusted / halfW + py / halfH) / 2),
+      y: Math.floor((py / halfH - adjusted / halfW) / 2),
+    };
+  }
+  if (tileMap.projection === "isometric-staggered") {
+    const roughY = Math.floor(py / (th / 2));
+    const oddRow = roughY & 1;
+    const roughX = Math.floor((px - oddRow * (tw / 2)) / tw);
+    return { x: roughX, y: roughY };
+  }
+  return { x: Math.floor(px / tw), y: Math.floor(py / th) };
+}
+
+export function getTileMapPixelBounds(tileMap: TileMapNodeData, zoom: number): { w: number; h: number } {
+  const tw = tileMap.tileWidth * zoom;
+  const th = tileMap.tileHeight * zoom;
+  if (tileMap.projection === "isometric-diamond") {
+    return {
+      w: (tileMap.mapWidthTiles + tileMap.mapHeightTiles) * (tw / 2),
+      h: (tileMap.mapWidthTiles + tileMap.mapHeightTiles) * (th / 2),
+    };
+  }
+  if (tileMap.projection === "isometric-staggered") {
+    return {
+      w: tileMap.mapWidthTiles * tw + tw / 2,
+      h: (tileMap.mapHeightTiles + 1) * (th / 2),
+    };
+  }
+  return { w: tileMap.mapWidthTiles * tw, h: tileMap.mapHeightTiles * th };
 }
 
 export function normalizeRect(x0: number, y0: number, x1: number, y1: number): SliceRect {
@@ -64,203 +139,543 @@ export function pointInRect(x: number, y: number, rect: SliceRect) {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
 }
 
-export function layerCapabilityLabel(layer: LevelLayer) {
-  const labels: string[] = [];
-  if (layer.hasTiles) {
-    labels.push("tiles");
-  }
-  if (layer.hasCollision) {
-    labels.push("collision");
-  }
-  if (layer.hasMarkers) {
-    labels.push("markers");
-  }
-  return labels.join(" + ") || "empty";
-}
-
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// Chunk-based tile rendering — no OffscreenCanvas, no rebuild spikes on zoom
-// ---------------------------------------------------------------------------
-// Iterates actual chunk tile arrays instead of the full W×H grid, so empty
-// positions are skipped entirely. Combined with cached project Maps this is
-// fast enough for smooth 60fps animation without any invalidation overhead.
-
 export function renderLevelCanvas(
   canvas: HTMLCanvasElement | null,
   project: ProjectDocument,
-  level: LevelDocument | null,
-  selectedLayer: LevelLayer | null,
+  scene: SceneDocument | null,
   zoom: number,
   animTimeMs?: number,
   onInvalidate?: () => void,
+  skipTiles = false,
+  cameraPan?: { x: number; y: number },
 ) {
-  if (!canvas || !level) return;
+  if (!canvas) return;
   const context = canvas.getContext("2d");
   if (!context) return;
 
-  const tileW = level.tileWidth * zoom;
-  const tileH = level.tileHeight * zoom;
   context.imageSmoothingEnabled = false;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = "#12171c";
-  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Always draw the viewport grid as background
+  if (!skipTiles) {
+    drawViewportGrid(context, canvas.width, canvas.height, 16 * zoom, zoom);
+  }
+
+  if (!scene) return;
+
+  const tileMapInstances = collectTileMapInstances(scene.root);
+  if (!tileMapInstances.length) return;
 
   const { tileById, sliceById, sourceById, terrainSetsMap, animatedTileLookup, terrainTileToSetId } = getProjectMaps(project);
 
-  // Group chunks by layerId once — O(total_chunks), reused for all layers.
-  const chunksByLayer = new Map<string, TileChunk[]>();
-  for (const chunk of Object.values(level.chunks) as TileChunk[]) {
-    const arr = chunksByLayer.get(chunk.layerId);
-    if (arr) arr.push(chunk);
-    else chunksByLayer.set(chunk.layerId, [chunk]);
-  }
+  for (const inst of tileMapInstances) {
+    const tileMap = inst.data;
+    const pxOffX = cameraPan ? cameraPan.x * (1 - inst.parallaxX) : 0;
+    const pxOffY = cameraPan ? cameraPan.y * (1 - inst.parallaxY) : 0;
+    const ox = inst.worldX * zoom + pxOffX;
+    const oy = inst.worldY * zoom + pxOffY;
+    const tileW = tileMap.tileWidth * zoom;
+    const tileH = tileMap.tileHeight * zoom;
 
-  for (const layer of level.layers) {
-    if (!layer.visible || !layer.hasTiles) continue;
-    for (const chunk of (chunksByLayer.get(layer.id) ?? [])) {
-      for (let i = 0; i < chunk.tiles.length; i++) {
-        const cell = chunk.tiles[i];
-        if (!cell.tileId) continue;
+    const tmBounds = getTileMapPixelBounds(tileMap, zoom);
 
-        const localX = i % level.chunkWidthTiles;
-        const localY = Math.floor(i / level.chunkWidthTiles);
-        const x = chunk.chunkX * level.chunkWidthTiles + localX;
-        const y = chunk.chunkY * level.chunkHeightTiles + localY;
+    if (!skipTiles) {
+      context.fillStyle = "rgba(18,23,28,0.85)";
+      context.fillRect(ox, oy, tmBounds.w, tmBounds.h);
 
-        const animSliceId = animTimeMs !== undefined
-          ? resolveAnimatedTileSliceId(animatedTileLookup, cell.tileId, animTimeMs)
-          : null;
-        const setId = terrainTileToSetId.get(cell.tileId);
-        const terrainSet = setId !== undefined ? terrainSetsMap.get(setId) : null;
+      for (const chunk of Object.values(tileMap.chunks) as TileMapChunk[]) {
+        for (let i = 0; i < chunk.tiles.length; i++) {
+          const cell = chunk.tiles[i];
+          if (!cell.tileId) continue;
 
-        if (terrainSet && terrainSet.mode === "blob47") {
-          const isTerrainAt = (tx: number, ty: number) => {
-            if (tx < 0 || ty < 0 || tx >= layer.widthTiles || ty >= layer.heightTiles) return false;
-            return terrainTileToSetId.get(getTileAt(level, layer, tx, ty).tileId) === setId;
-          };
-          const n = isTerrainAt(x, y - 1); const s = isTerrainAt(x, y + 1);
-          const w = isTerrainAt(x - 1, y); const e = isTerrainAt(x + 1, y);
-          const nw = isTerrainAt(x - 1, y - 1); const ne = isTerrainAt(x + 1, y - 1);
-          const sw = isTerrainAt(x - 1, y + 1); const se = isTerrainAt(x + 1, y + 1);
-          const mask = calculateBlob47Mask(n, s, w, e, nw, ne, sw, se);
-          const blobTileId = terrainSet.slots[mask] || getTerrainSetMarkerTileId(terrainSet);
-          const blobAsset = tileById.get(blobTileId);
-          const blobSlice = blobAsset ? sliceById.get(blobAsset.sliceId) : null;
-          const blobSource = blobSlice ? sourceById.get(blobSlice.sourceImageId) : null;
-          const blobImage = blobSource ? getCachedRenderImage(blobSource.id, blobSource.dataUrl, onInvalidate) : null;
-          if (blobSlice && blobImage?.complete && blobImage.naturalWidth) {
-            context.drawImage(blobImage, blobSlice.sourceRect.x, blobSlice.sourceRect.y, blobSlice.sourceRect.width, blobSlice.sourceRect.height, x * tileW, y * tileH, tileW, tileH);
-          } else {
-            context.fillStyle = "#37526a";
-            context.fillRect(x * tileW, y * tileH, tileW, tileH);
+          const localX = i % tileMap.chunkWidthTiles;
+          const localY = Math.floor(i / tileMap.chunkWidthTiles);
+          const x = chunk.chunkX * tileMap.chunkWidthTiles + localX;
+          const y = chunk.chunkY * tileMap.chunkHeightTiles + localY;
+          if (x >= tileMap.mapWidthTiles || y >= tileMap.mapHeightTiles) continue;
+          const tileScreen = tileToScreen(x, y, tileMap, zoom);
+          const px = ox + tileScreen.x;
+          const py = oy + tileScreen.y;
+
+          const animSliceId = animTimeMs !== undefined
+            ? resolveAnimatedTileSliceId(animatedTileLookup, cell.tileId, animTimeMs)
+            : null;
+          const setId = terrainTileToSetId.get(cell.tileId);
+          const terrainSet = setId !== undefined ? terrainSetsMap.get(setId) : null;
+
+          if (terrainSet && terrainSet.mode === "blob47") {
+            const isTerrainAt = (tx: number, ty: number) => {
+              if (tx < 0 || ty < 0 || tx >= tileMap.mapWidthTiles || ty >= tileMap.mapHeightTiles) return false;
+              return terrainTileToSetId.get(getTileAt(tileMap, tx, ty).tileId) === setId;
+            };
+            const mask = calculateBlob47Mask(
+              isTerrainAt(x, y - 1), isTerrainAt(x, y + 1), isTerrainAt(x - 1, y), isTerrainAt(x + 1, y),
+              isTerrainAt(x - 1, y - 1), isTerrainAt(x + 1, y - 1), isTerrainAt(x - 1, y + 1), isTerrainAt(x + 1, y + 1),
+            );
+            const blobTileId = terrainSet.slots[mask] || getTerrainSetMarkerTileId(terrainSet);
+            drawTileToCanvas(context, blobTileId, null, px, py, tileW, tileH, tileById, sliceById, sourceById, onInvalidate);
+            continue;
           }
-          continue;
-        }
 
-        if (terrainSet && (terrainSet.mode === "subtile" || terrainSet.mode === "rpgmaker")) {
-          const isTerrainAt = (tx: number, ty: number) => {
-            if (tx < 0 || ty < 0 || tx >= layer.widthTiles || ty >= layer.heightTiles) return false;
-            return terrainTileToSetId.get(getTileAt(level, layer, tx, ty).tileId) === setId;
-          };
-          const n = isTerrainAt(x, y - 1); const s = isTerrainAt(x, y + 1);
-          const w = isTerrainAt(x - 1, y); const e = isTerrainAt(x + 1, y);
-          const nw = isTerrainAt(x - 1, y - 1); const ne = isTerrainAt(x + 1, y - 1);
-          const sw = isTerrainAt(x - 1, y + 1); const se = isTerrainAt(x + 1, y + 1);
-          const drawSubtile = (qIdx: number, n1: boolean, n2: boolean, diag: boolean, xOff: number, yOff: number) => {
-            let st = 0;
-            if (n1 && n2) st = diag ? 4 : 3;
-            else if (n1) st = 1;
-            else if (n2) st = 2;
-            const qTileId = terrainSet.slots[qIdx * 5 + st];
-            const qTile = qTileId ? tileById.get(qTileId) : null;
-            const qSlice = qTile ? sliceById.get(qTile.sliceId) : null;
-            const qSource = qSlice ? sourceById.get(qSlice.sourceImageId) : null;
-            const qImage = qSource ? getCachedRenderImage(qSource.id, qSource.dataUrl, onInvalidate) : null;
-            if (qSlice && qImage?.complete && qImage.naturalWidth) {
-              context.drawImage(qImage, qSlice.sourceRect.x, qSlice.sourceRect.y, qSlice.sourceRect.width, qSlice.sourceRect.height, x * tileW + (xOff * tileW) / 2, y * tileH + (yOff * tileH) / 2, tileW / 2, tileH / 2);
-            } else {
-              context.fillStyle = "#37526a";
-              context.fillRect(x * tileW + (xOff * tileW) / 2, y * tileH + (yOff * tileH) / 2, tileW / 2, tileH / 2);
-            }
-          };
-          drawSubtile(0, n, w, nw, 0, 0);
-          drawSubtile(1, n, e, ne, 1, 0);
-          drawSubtile(2, s, w, sw, 0, 1);
-          drawSubtile(3, s, e, se, 1, 1);
-          continue;
-        }
+          if (terrainSet && (terrainSet.mode === "subtile" || terrainSet.mode === "rpgmaker")) {
+            const isTerrainAt = (tx: number, ty: number) => {
+              if (tx < 0 || ty < 0 || tx >= tileMap.mapWidthTiles || ty >= tileMap.mapHeightTiles) return false;
+              return terrainTileToSetId.get(getTileAt(tileMap, tx, ty).tileId) === setId;
+            };
+            const n = isTerrainAt(x, y - 1), s = isTerrainAt(x, y + 1), w2 = isTerrainAt(x - 1, y), e = isTerrainAt(x + 1, y);
+            const nw = isTerrainAt(x - 1, y - 1), ne = isTerrainAt(x + 1, y - 1), sw = isTerrainAt(x - 1, y + 1), se = isTerrainAt(x + 1, y + 1);
+            const sub = (qi: number, n1: boolean, n2: boolean, diag: boolean, xo: number, yo: number) => {
+              let st = 0;
+              if (n1 && n2) st = diag ? 4 : 3; else if (n1) st = 1; else if (n2) st = 2;
+              drawTileToCanvas(context, terrainSet.slots[qi * 5 + st] || 0, null, px + xo * tileW / 2, py + yo * tileH / 2, tileW / 2, tileH / 2, tileById, sliceById, sourceById, onInvalidate);
+            };
+            sub(0, n, w2, nw, 0, 0); sub(1, n, e, ne, 1, 0); sub(2, s, w2, sw, 0, 1); sub(3, s, e, se, 1, 1);
+            continue;
+          }
 
-        const slice = animSliceId
-          ? sliceById.get(animSliceId)
-          : (() => { const a = tileById.get(cell.tileId); return a ? sliceById.get(a.sliceId) : null; })();
-        const source = slice ? sourceById.get(slice.sourceImageId) : null;
-        const image = source ? getCachedRenderImage(source.id, source.dataUrl, onInvalidate) : null;
-        if (!slice || !image?.complete || !image.naturalWidth) {
-          context.fillStyle = "#37526a";
-          context.fillRect(x * tileW, y * tileH, tileW, tileH);
-          continue;
+          drawTileToCanvas(context, cell.tileId, animSliceId, px, py, tileW, tileH, tileById, sliceById, sourceById, onInvalidate);
         }
-        context.drawImage(image, slice.sourceRect.x, slice.sourceRect.y, slice.sourceRect.width, slice.sourceRect.height, x * tileW, y * tileH, tileW, tileH);
       }
     }
-  }
 
-  for (const collision of level.collisions) {
-    context.strokeStyle = "#ff7c7c";
-    context.lineWidth = 2;
-    context.strokeRect(collision.x * zoom, collision.y * zoom, collision.w * zoom, collision.h * zoom);
-  }
-  for (const marker of level.markers) {
-    context.strokeStyle = "#77d8ff";
-    context.lineWidth = 2;
-    if (marker.shape === "Point") {
+    // Per-TileMap grid
+    if (tileMap.projection === "orthogonal") {
+      context.strokeStyle = "rgba(255,255,255,0.06)";
+      context.lineWidth = 1;
       context.beginPath();
-      context.arc(marker.x * zoom + tileW * 0.5, marker.y * zoom + tileH * 0.5, 5, 0, Math.PI * 2);
+      for (let gx = 0; gx <= tileMap.mapWidthTiles; gx++) { context.moveTo(ox + gx * tileW, oy); context.lineTo(ox + gx * tileW, oy + tmBounds.h); }
+      for (let gy = 0; gy <= tileMap.mapHeightTiles; gy++) { context.moveTo(ox, oy + gy * tileH); context.lineTo(ox + tmBounds.w, oy + gy * tileH); }
+      context.stroke();
+
+      context.strokeStyle = "rgba(255,200,90,0.2)";
+      context.lineWidth = 1;
+      context.beginPath();
+      for (let gx = 0; gx <= tileMap.mapWidthTiles; gx += tileMap.chunkWidthTiles) { context.moveTo(ox + gx * tileW, oy); context.lineTo(ox + gx * tileW, oy + tmBounds.h); }
+      for (let gy = 0; gy <= tileMap.mapHeightTiles; gy += tileMap.chunkHeightTiles) { context.moveTo(ox, oy + gy * tileH); context.lineTo(ox + tmBounds.w, oy + gy * tileH); }
       context.stroke();
     } else {
-      context.strokeRect(marker.x * zoom, marker.y * zoom, marker.w * zoom, marker.h * zoom);
+      context.strokeStyle = "rgba(255,255,255,0.06)";
+      context.lineWidth = 1;
+      context.beginPath();
+      for (let gy = 0; gy <= tileMap.mapHeightTiles; gy++) {
+        const left = tileToScreen(0, gy, tileMap, zoom);
+        const right = tileToScreen(tileMap.mapWidthTiles, gy, tileMap, zoom);
+        context.moveTo(ox + left.x, oy + left.y);
+        context.lineTo(ox + right.x, oy + right.y);
+      }
+      for (let gx = 0; gx <= tileMap.mapWidthTiles; gx++) {
+        const top = tileToScreen(gx, 0, tileMap, zoom);
+        const bottom = tileToScreen(gx, tileMap.mapHeightTiles, tileMap, zoom);
+        context.moveTo(ox + top.x, oy + top.y);
+        context.lineTo(ox + bottom.x, oy + bottom.y);
+      }
+      context.stroke();
     }
-  }
 
+    // TileMap boundary
+    context.strokeStyle = "rgba(240, 197, 123, 0.5)";
+    context.lineWidth = 2;
+    context.strokeRect(ox, oy, tmBounds.w, tmBounds.h);
+  }
+}
+
+function drawTileToCanvas(
+  context: CanvasRenderingContext2D,
+  tileId: number,
+  animSliceId: string | null,
+  px: number, py: number, w: number, h: number,
+  tileById: Map<number, import("../../types").TilesetTileAsset>,
+  sliceById: Map<string, import("../../types").SliceAsset>,
+  sourceById: Map<string, import("../../types").SourceImageAsset>,
+  onInvalidate?: () => void,
+) {
+  if (!tileId) return;
+  const slice = animSliceId
+    ? sliceById.get(animSliceId)
+    : (() => { const a = tileById.get(tileId); return a ? sliceById.get(a.sliceId) : undefined; })();
+  const source = slice ? sourceById.get(slice.sourceImageId) : undefined;
+  const image = source ? getCachedRenderImage(source.id, source.dataUrl, onInvalidate) : null;
+  if (!slice || !image?.complete || !image.naturalWidth) {
+    context.fillStyle = "#37526a";
+    context.fillRect(px, py, w, h);
+    return;
+  }
+  context.drawImage(image, slice.sourceRect.x, slice.sourceRect.y, slice.sourceRect.width, slice.sourceRect.height, px, py, w, h);
+}
+
+function drawViewportGrid(context: CanvasRenderingContext2D, w: number, h: number, cellSize: number, _zoom: number) {
+  context.fillStyle = "#0e1318";
+  context.fillRect(0, 0, w, h);
+
+  context.strokeStyle = "rgba(255,255,255,0.04)";
+  context.lineWidth = 1;
+  context.beginPath();
+  for (let x = 0; x <= w; x += cellSize) {
+    context.moveTo(x, 0);
+    context.lineTo(x, h);
+  }
+  for (let y = 0; y <= h; y += cellSize) {
+    context.moveTo(0, y);
+    context.lineTo(w, y);
+  }
+  context.stroke();
+
+  // Major grid every 4 cells
+  const majorSize = cellSize * 4;
   context.strokeStyle = "rgba(255,255,255,0.08)";
   context.lineWidth = 1;
   context.beginPath();
-  for (let x = 0; x <= level.mapWidthTiles; x++) {
-    context.moveTo(x * tileW, 0);
-    context.lineTo(x * tileW, canvas.height);
+  for (let x = 0; x <= w; x += majorSize) {
+    context.moveTo(x, 0);
+    context.lineTo(x, h);
   }
-  for (let y = 0; y <= level.mapHeightTiles; y++) {
-    context.moveTo(0, y * tileH);
-    context.lineTo(canvas.width, y * tileH);
+  for (let y = 0; y <= h; y += majorSize) {
+    context.moveTo(0, y);
+    context.lineTo(w, y);
   }
   context.stroke();
 
-  context.strokeStyle = "rgba(255,200,90,0.3)";
-  context.lineWidth = 1.5;
+  // Origin crosshair
+  context.strokeStyle = "rgba(255,255,255,0.15)";
+  context.lineWidth = 1;
   context.beginPath();
-  for (let x = 0; x <= level.mapWidthTiles; x += level.chunkWidthTiles) {
-    context.moveTo(x * tileW, 0);
-    context.lineTo(x * tileW, canvas.height);
-  }
-  for (let y = 0; y <= level.mapHeightTiles; y += level.chunkHeightTiles) {
-    context.moveTo(0, y * tileH);
-    context.lineTo(canvas.width, y * tileH);
-  }
+  context.moveTo(w / 2, 0);
+  context.lineTo(w / 2, h);
+  context.moveTo(0, h / 2);
+  context.lineTo(w, h / 2);
   context.stroke();
+}
 
-  if (selectedLayer) {
-    context.strokeStyle = "rgba(88,171,255,0.75)";
-    context.lineWidth = 2;
-    context.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+export function renderSceneNodes(
+  canvas: HTMLCanvasElement | null,
+  project: ProjectDocument,
+  scene: SceneDocument | null,
+  selectedNodeId: string | null,
+  zoom: number,
+  onInvalidate?: () => void,
+  cameraPan?: { x: number; y: number },
+  animTimeMs?: number,
+) {
+  if (!canvas || !scene) return;
+  const context = canvas.getContext("2d");
+  if (!context) return;
+
+  const { sliceById, sourceById } = getProjectMaps(project);
+  const layers = flattenByRenderLayer(scene.root);
+  const sortedKeys = [...layers.keys()].sort((a, b) => a - b);
+
+  for (const layerKey of sortedKeys) {
+    const nodes = layers.get(layerKey)!;
+    for (const node of nodes) {
+      if (node.data.type === "Root" || node.data.type === "TileMap") continue;
+      if (node.data.type === "Node2D" && node.id !== selectedNodeId) continue;
+
+      const wt = getWorldTransform(scene.root, node.id);
+      const pxOff = cameraPan ? cameraPan.x * (1 - node.parallaxX) : 0;
+      const pyOff = cameraPan ? cameraPan.y * (1 - node.parallaxY) : 0;
+      const px = wt.x * zoom + pxOff;
+      const py = wt.y * zoom + pyOff;
+
+      if (node.data.type === "Node2D") {
+        if (node.id === selectedNodeId) {
+          context.strokeStyle = "rgba(255,255,255,0.3)";
+          context.lineWidth = 1;
+          context.setLineDash([3, 3]);
+          context.beginPath();
+          context.moveTo(px - 8, py);
+          context.lineTo(px + 8, py);
+          context.moveTo(px, py - 8);
+          context.lineTo(px, py + 8);
+          context.stroke();
+          context.setLineDash([]);
+        }
+      } else if (node.data.type === "Sprite") {
+        const slice = sliceById.get(node.data.sliceId);
+        const source = slice ? sourceById.get(slice.sourceImageId) : null;
+        const image = source ? getCachedRenderImage(source.id, source.dataUrl, onInvalidate) : null;
+        if (slice && image?.complete && image.naturalWidth) {
+          context.save();
+          context.translate(px, py);
+          if (wt.rotation) context.rotate(wt.rotation * Math.PI / 180);
+          context.scale(
+            wt.scaleX * (node.data.flipH ? -1 : 1),
+            wt.scaleY * (node.data.flipV ? -1 : 1),
+          );
+          context.drawImage(
+            image,
+            slice.sourceRect.x, slice.sourceRect.y,
+            slice.sourceRect.width, slice.sourceRect.height,
+            0, 0,
+            slice.sourceRect.width * zoom, slice.sourceRect.height * zoom,
+          );
+          context.restore();
+        } else {
+          context.fillStyle = "rgba(135,197,255,0.25)";
+          context.fillRect(px, py, 16 * zoom, 16 * zoom);
+        }
+      } else if (node.data.type === "AnimatedSprite") {
+        const animData = node.data;
+        let sliceId: string | undefined;
+        const firstAnimId = animData.spriteAnimationIds[0];
+        const anim = firstAnimId !== undefined ? project.spriteAnimations.find((a) => a.id === firstAnimId) : undefined;
+        if (anim && anim.frames.length > 0) {
+          const frameIdx = animTimeMs !== undefined ? getFrameAtTime(anim.frames, animTimeMs, anim.loop) : 0;
+          sliceId = anim.frames[frameIdx].sliceId;
+        }
+        const slice = sliceId ? sliceById.get(sliceId) : null;
+        const source = slice ? sourceById.get(slice.sourceImageId) : null;
+        const image = source ? getCachedRenderImage(source.id, source.dataUrl, onInvalidate) : null;
+        if (slice && image?.complete && image.naturalWidth) {
+          context.save();
+          context.translate(px, py);
+          if (wt.rotation) context.rotate(wt.rotation * Math.PI / 180);
+          context.scale(
+            wt.scaleX * (animData.flipH ? -1 : 1),
+            wt.scaleY * (animData.flipV ? -1 : 1),
+          );
+          context.drawImage(
+            image,
+            slice.sourceRect.x, slice.sourceRect.y,
+            slice.sourceRect.width, slice.sourceRect.height,
+            0, 0,
+            slice.sourceRect.width * zoom, slice.sourceRect.height * zoom,
+          );
+          context.restore();
+        } else {
+          context.fillStyle = "rgba(197,135,255,0.25)";
+          context.fillRect(px, py, 16 * zoom, 16 * zoom);
+        }
+      } else if (node.data.type === "CollisionShape") {
+        context.strokeStyle = "rgba(255,124,124,0.8)";
+        context.lineWidth = 2;
+        if (node.data.shape === "circle") {
+          context.beginPath();
+          context.arc(px, py, node.data.radius * zoom, 0, Math.PI * 2);
+          context.stroke();
+        } else {
+          context.strokeRect(px, py, node.data.width * zoom, node.data.height * zoom);
+        }
+      } else if (node.data.type === "Area") {
+        context.strokeStyle = "rgba(119,216,255,0.8)";
+        context.lineWidth = 2;
+        if (node.data.shape === "point") {
+          context.beginPath();
+          context.arc(px, py, 5, 0, Math.PI * 2);
+          context.stroke();
+          context.fillStyle = "rgba(119,216,255,0.3)";
+          context.fill();
+        } else {
+          context.strokeRect(px, py, node.data.width * zoom, node.data.height * zoom);
+        }
+      } else if (node.data.type === "Light2D") {
+        const r = node.data.radius * zoom;
+        const variant = node.data.variant ?? "omni";
+        if (variant === "directional") {
+          const dirRad = (node.data.directionAngle ?? 0) * Math.PI / 180;
+          const halfCone = (node.data.coneAngle ?? 45) * Math.PI / 360;
+          const startAngle = dirRad - halfCone;
+          const endAngle = dirRad + halfCone;
+          const gradient = context.createRadialGradient(px, py, 0, px, py, r);
+          gradient.addColorStop(0, "rgba(255,224,102,0.3)");
+          gradient.addColorStop(1, "rgba(255,224,102,0)");
+          context.fillStyle = gradient;
+          context.beginPath();
+          context.moveTo(px, py);
+          context.arc(px, py, r, startAngle, endAngle);
+          context.closePath();
+          context.fill();
+          context.strokeStyle = "rgba(255,224,102,0.6)";
+          context.lineWidth = 1;
+          context.beginPath();
+          context.moveTo(px, py);
+          context.lineTo(px + Math.cos(startAngle) * r, py + Math.sin(startAngle) * r);
+          context.moveTo(px, py);
+          context.lineTo(px + Math.cos(endAngle) * r, py + Math.sin(endAngle) * r);
+          context.stroke();
+        } else {
+          const gradient = context.createRadialGradient(px, py, 0, px, py, r);
+          gradient.addColorStop(0, "rgba(255,224,102,0.3)");
+          gradient.addColorStop(1, "rgba(255,224,102,0)");
+          context.fillStyle = gradient;
+          context.beginPath();
+          context.arc(px, py, r, 0, Math.PI * 2);
+          context.fill();
+          context.strokeStyle = "rgba(255,224,102,0.6)";
+          context.lineWidth = 1;
+          context.stroke();
+        }
+      } else if (node.data.type === "Camera2D") {
+        const camZoom = node.data.zoom || 1;
+        const vw = 320 / camZoom * zoom;
+        const vh = 240 / camZoom * zoom;
+        context.strokeStyle = "rgba(255,179,71,0.85)";
+        context.lineWidth = node.data.isCurrent ? 2 : 1;
+        context.setLineDash([4, 4]);
+        context.strokeRect(px - vw / 2, py - vh / 2, vw, vh);
+        context.setLineDash([]);
+        context.beginPath();
+        context.arc(px, py, 4, 0, Math.PI * 2);
+        context.fillStyle = node.data.isCurrent ? "rgba(255,179,71,0.9)" : "rgba(255,179,71,0.5)";
+        context.fill();
+        if (node.data.useBounds) {
+          context.strokeStyle = "rgba(255,179,71,0.4)";
+          context.lineWidth = 1;
+          context.strokeRect(node.data.boundsLeft * zoom, node.data.boundsTop * zoom, (node.data.boundsRight - node.data.boundsLeft) * zoom, (node.data.boundsBottom - node.data.boundsTop) * zoom);
+        }
+      } else if (node.data.type === "Spawner") {
+        context.strokeStyle = "rgba(255,135,197,0.85)";
+        context.fillStyle = "rgba(255,135,197,0.85)";
+        context.lineWidth = 1.5;
+        context.beginPath();
+        context.moveTo(px - 6, py); context.lineTo(px + 6, py);
+        context.moveTo(px, py - 6); context.lineTo(px, py + 6);
+        context.stroke();
+        context.beginPath();
+        context.arc(px, py, 3, 0, Math.PI * 2);
+        context.fill();
+        if (node.data.spawnAreaRadius > 0) {
+          context.setLineDash([3, 3]);
+          context.beginPath();
+          context.arc(px, py, node.data.spawnAreaRadius * zoom, 0, Math.PI * 2);
+          context.stroke();
+          context.setLineDash([]);
+        }
+      } else if (node.data.type === "Timer") {
+        context.strokeStyle = "rgba(160,160,255,0.9)";
+        context.fillStyle = "rgba(160,160,255,0.25)";
+        context.lineWidth = 1.5;
+        context.beginPath();
+        context.arc(px, py, 8, 0, Math.PI * 2);
+        context.fill();
+        context.stroke();
+        context.beginPath();
+        context.moveTo(px, py); context.lineTo(px, py - 6);
+        context.moveTo(px, py); context.lineTo(px + 4, py + 1);
+        context.stroke();
+      } else if (node.data.type === "VisibilityNotifier") {
+        context.strokeStyle = "rgba(127,255,212,0.85)";
+        context.lineWidth = 1.5;
+        context.setLineDash([6, 4]);
+        context.strokeRect(px, py, node.data.width * zoom, node.data.height * zoom);
+        context.setLineDash([]);
+      } else if (node.data.type === "Decal") {
+        const slice = sliceById.get(node.data.sliceId);
+        const source = slice ? sourceById.get(slice.sourceImageId) : null;
+        const image = source ? getCachedRenderImage(source.id, source.dataUrl, onInvalidate) : null;
+        if (slice && image?.complete && image.naturalWidth) {
+          context.save();
+          context.translate(px, py);
+          if (wt.rotation) context.rotate(wt.rotation * Math.PI / 180);
+          context.scale(wt.scaleX * (node.data.flipH ? -1 : 1), wt.scaleY * (node.data.flipV ? -1 : 1));
+          const blend = node.data.blendMode;
+          context.globalCompositeOperation = blend === "additive" ? "lighter" : blend === "multiply" ? "multiply" : "source-over";
+          context.drawImage(image, slice.sourceRect.x, slice.sourceRect.y, slice.sourceRect.width, slice.sourceRect.height, 0, 0, slice.sourceRect.width * zoom, slice.sourceRect.height * zoom);
+          context.restore();
+        } else {
+          context.strokeStyle = "rgba(180,180,180,0.5)";
+          context.setLineDash([3, 3]);
+          context.strokeRect(px, py, 16 * zoom, 16 * zoom);
+          context.setLineDash([]);
+        }
+      } else if (node.data.type === "Path2D") {
+        const pts = node.data.points;
+        if (pts.length >= 2) {
+          context.strokeStyle = node.data.color || "#87ff87";
+          context.lineWidth = 2;
+          context.beginPath();
+          context.moveTo(px + pts[0].x * zoom, py + pts[0].y * zoom);
+          for (let i = 1; i < pts.length; i++) {
+            context.lineTo(px + pts[i].x * zoom, py + pts[i].y * zoom);
+          }
+          if (node.data.closed) context.closePath();
+          context.stroke();
+        }
+      } else if (node.data.type === "PathFollow2D") {
+        // Resolve target Path2D by name match; render marker along the path if found
+        let markerX = px, markerY = py;
+        if (node.data.pathNodeName) {
+          const target = findNodeByName(scene.root, node.data.pathNodeName);
+          if (target && target.data.type === "Path2D") {
+            const targetWT = getWorldTransform(scene.root, target.id);
+            const pt = resolvePointOnPath(target.data.points, target.data.closed, node.data.progress);
+            if (pt) {
+              markerX = (targetWT.x + pt.x) * zoom + pxOff;
+              markerY = (targetWT.y + pt.y) * zoom + pyOff;
+            }
+          }
+        }
+        context.strokeStyle = "rgba(170,255,170,0.9)";
+        context.fillStyle = "rgba(170,255,170,0.6)";
+        context.lineWidth = 1.5;
+        context.beginPath();
+        context.arc(markerX, markerY, 5, 0, Math.PI * 2);
+        context.fill();
+        context.stroke();
+        if (node.id === selectedNodeId) {
+          context.setLineDash([2, 2]);
+          context.strokeStyle = "rgba(170,255,170,0.5)";
+          context.beginPath();
+          context.moveTo(px, py);
+          context.lineTo(markerX, markerY);
+          context.stroke();
+          context.setLineDash([]);
+        }
+      } else if (node.data.type === "NavRegion2D") {
+        const pts = node.data.points;
+        if (pts.length >= 3) {
+          context.fillStyle = "rgba(95,165,255,0.15)";
+          context.strokeStyle = "rgba(95,165,255,0.85)";
+          context.lineWidth = 1.5;
+          context.beginPath();
+          context.moveTo(px + pts[0].x * zoom, py + pts[0].y * zoom);
+          for (let i = 1; i < pts.length; i++) {
+            context.lineTo(px + pts[i].x * zoom, py + pts[i].y * zoom);
+          }
+          context.closePath();
+          context.fill();
+          context.stroke();
+        }
+      }
+
+      if (node.id === selectedNodeId && node.data.type !== "Node2D") {
+        context.font = "10px monospace";
+        context.fillStyle = "rgba(255,255,255,0.7)";
+        context.fillText(node.name, px, py - 4);
+      }
+    }
+  }
+}
+
+function getNodeBounds(node: SceneNode): { w: number; h: number } {
+  switch (node.data.type) {
+    case "CollisionShape": return { w: node.data.width, h: node.data.height };
+    case "Area": return { w: node.data.width, h: node.data.height };
+    case "Light2D": return { w: node.data.radius * 2, h: node.data.radius * 2 };
+    case "Sprite": return { w: 16, h: 16 };
+    case "AnimatedSprite": return { w: 16, h: 16 };
+    case "VisibilityNotifier": return { w: node.data.width, h: node.data.height };
+    case "Decal": return { w: 16, h: 16 };
+    case "Camera2D": return { w: 16, h: 16 };
+    case "Spawner": return { w: 16, h: 16 };
+    case "Timer": return { w: 16, h: 16 };
+    case "PathFollow2D": return { w: 16, h: 16 };
+    case "Path2D":
+    case "NavRegion2D": {
+      const pts = node.data.points;
+      if (!pts.length) return { w: 16, h: 16 };
+      let minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y;
+      for (const p of pts) {
+        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+      }
+      return { w: Math.max(16, maxX - minX), h: Math.max(16, maxY - minY) };
+    }
+    default: return { w: 16, h: 16 };
   }
 }
 
 const renderImageCache = new Map<string, HTMLImageElement>();
 
-// Cache project-derived lookup maps keyed by project object identity.
-// The project reference only changes when Redux state changes, never between animation frames,
-// so these maps only get rebuilt when data actually changes — not every 60fps tick.
 let _cachedProject: unknown = null;
 let _cachedTileById = new Map<number, import("../../types").TilesetTileAsset>();
 let _cachedSliceById = new Map<string, import("../../types").SliceAsset>();
@@ -292,6 +707,43 @@ function getProjectMaps(project: ProjectDocument) {
     animatedTileLookup: _cachedAnimatedTileLookup,
     terrainTileToSetId: _cachedTerrainTileToSetId,
   };
+}
+
+function findNodeByName(root: SceneNode, name: string): SceneNode | null {
+  if (root.name === name) return root;
+  for (const child of root.children) {
+    const found = findNodeByName(child, name);
+    if (found) return found;
+  }
+  return null;
+}
+
+function resolvePointOnPath(points: { x: number; y: number }[], closed: boolean, progress: number): { x: number; y: number } | null {
+  if (points.length === 0) return null;
+  if (points.length === 1) return points[0];
+  const t = Math.max(0, Math.min(1, progress));
+  const segments: { from: number; len: number }[] = [];
+  let total = 0;
+  const lastIndex = closed ? points.length : points.length - 1;
+  for (let i = 0; i < lastIndex; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    segments.push({ from: i, len });
+    total += len;
+  }
+  if (total === 0) return points[0];
+  let target = t * total;
+  for (const seg of segments) {
+    if (target <= seg.len) {
+      const a = points[seg.from];
+      const b = points[(seg.from + 1) % points.length];
+      const u = seg.len > 0 ? target / seg.len : 0;
+      return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+    }
+    target -= seg.len;
+  }
+  return points[points.length - 1];
 }
 
 function getCachedRenderImage(sourceId: string, dataUrl: string, onInvalidate?: () => void) {

@@ -2,11 +2,10 @@ import type {
   BuildOptions,
   EditorState,
   IdCounters,
-  LevelDocument,
-  LevelLayer,
   ProjectDocument,
   TilesetDraft,
 } from "../types";
+import { createDefaultScene } from "../scene/helpers";
 
 export const DEFAULT_ATLAS_OPTIONS: BuildOptions = {
   maxPageSize: 1024,
@@ -34,10 +33,8 @@ export const DEFAULT_EDITOR_STATE: EditorState = {
   selectedAnimatedTileId: null,
   animCurrentFrame: 0,
   animIsPlaying: false,
-  selectedLevelId: "level-1",
-  selectedLayerId: "layer-1",
-  selectedCollisionId: null,
-  selectedMarkerId: null,
+  selectedSceneId: "scene-1",
+  selectedNodeId: null,
   atlasHoveredSpriteId: null,
   levelTool: "brush",
   levelPickerTab: "tiles",
@@ -62,63 +59,11 @@ export function createDefaultIdCounters(): IdCounters {
     sprite: 1,
     tileset: 1,
     tile: 1,
-    level: 2,
-    layer: 4,
-    collision: 1,
-    marker: 1,
+    scene: 2,
+    node: 10,
     terrainSet: 1,
     spriteAnimation: 1,
     animatedTile: 1,
-  };
-}
-
-export function createLevelLayer(
-  id: string,
-  name: string,
-  widthTiles: number,
-  heightTiles: number,
-  capabilities: Partial<Pick<LevelLayer, "hasTiles" | "hasCollision" | "hasMarkers">> = { hasTiles: true },
-): LevelLayer {
-  return {
-    id,
-    name,
-    visible: true,
-    locked: false,
-    repeatX: false,
-    repeatY: false,
-    foreground: false,
-    hasTiles: Boolean(capabilities.hasTiles),
-    hasCollision: Boolean(capabilities.hasCollision),
-    hasMarkers: Boolean(capabilities.hasMarkers),
-    parallaxX: 1,
-    parallaxY: 1,
-    offsetX: 0,
-    offsetY: 0,
-    widthTiles,
-    heightTiles,
-  };
-}
-
-export function createDefaultLevel(): LevelDocument {
-  return {
-    id: "level-1",
-    name: "level01",
-    mapWidthTiles: 64,
-    mapHeightTiles: 36,
-    tileWidth: 16,
-    tileHeight: 16,
-    chunkWidthTiles: 16,
-    chunkHeightTiles: 16,
-    tileIds: [],
-    tilesetIds: [],
-    layers: [
-      createLevelLayer("layer-1", "Ground", 64, 36, { hasTiles: true }),
-      createLevelLayer("layer-2", "Gameplay", 64, 36, { hasCollision: true, hasMarkers: true }),
-      createLevelLayer("layer-3", "Foreground", 64, 36, { hasTiles: true }),
-    ],
-    chunks: {},
-    collisions: [],
-    markers: [],
   };
 }
 
@@ -134,7 +79,7 @@ export function createEmptyProject(): ProjectDocument {
     terrainSets: [],
     spriteAnimations: [],
     animatedTiles: [],
-    levels: [createDefaultLevel()],
+    scenes: [createDefaultScene("scene-1")],
     atlasSettings: DEFAULT_ATLAS_OPTIONS,
     idCounters: createDefaultIdCounters(),
   };

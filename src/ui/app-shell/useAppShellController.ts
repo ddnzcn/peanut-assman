@@ -1,24 +1,30 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { getFrameAtTime as getAnimFrameAtTime } from "../../animation/playback";
-import { buildProjectJsonBlob, exportLevelDebugJson, exportTilemapBin, loadProjectFromFile } from "../../export";
+import { buildProjectJsonBlob, loadProjectFromFile, exportSceneBin, exportSceneDebugJson } from "../../export";
 import { createSourceSlicesFromImages, fileToSourceImageAsset } from "../../image";
 import { createExampleProject } from "../../model/exampleProject";
-import { createLevelLayer } from "../../model/project";
-import { getEffectiveLevelTileIds, getSelectedLayer, getSelectedLevel, getSelectedTerrainSet } from "../../model/selectors";
+import { getEffectiveTileMapTileIds, getSelectedNode, getSelectedScene, getSelectedTerrainSet, getSelectedTileMapData } from "../../model/selectors";
 import { useProjectStore } from "../../model/store";
 import type {
+  SceneNode,
   SourceImageAsset,
   TilesetTileAsset,
 } from "../../types";
-import { clamp, fileNameBase, fnv1a32, saveBlobWithPicker } from "../../utils";
+import { clamp, fileNameBase, fnv1a32, saveBlobWithPicker, saveFilesToDirectory, type OutputFile } from "../../utils";
 import { buildAtlasFromProject } from "../../model/selectors";
 import { useAtlasEditor } from "./useAtlasEditor";
 import { useLevelEditor } from "./useLevelEditor";
+import { createNode, findFirstTileMapInScene, findParent } from "../../scene/helpers";
 
 export function useAppShellController() {
   const { state, dispatch } = useProjectStore();
-  const level = getSelectedLevel(state);
-  const layer = getSelectedLayer(state);
+  const scene = getSelectedScene(state);
+  const selectedNode = getSelectedNode(state);
+  const tileMapData = getSelectedTileMapData(state);
+  const sceneTileMapData = useMemo(
+    () => scene ? findFirstTileMapInScene(scene.root) : null,
+    [scene],
+  );
   const selectedTerrainSet = getSelectedTerrainSet(state);
   const selectedSourceImage =
     state.project.sourceImages.find((source) => source.id === state.editor.selectedSourceImageId) ??
@@ -46,27 +52,26 @@ export function useAppShellController() {
     workspace: "level" | "slicer";
   } | null>(null);
 
-  // Animation playback time (ref — not in store to avoid re-renders on every frame)
   const animPlaybackTimeRef = useRef<number>(0);
 
-  const effectiveLevelTileIds = useMemo(() => getEffectiveLevelTileIds(state.project, level), [level, state.project]);
+  const effectiveLevelTileIds = useMemo(() => getEffectiveTileMapTileIds(state.project, tileMapData), [tileMapData, state.project]);
   const tilePalette = useMemo(
     () =>
       effectiveLevelTileIds
-        .map((tileId) => state.project.tiles.find((tile) => tile.tileId === tileId))
+        .map((tileId: number) => state.project.tiles.find((tile: TilesetTileAsset) => tile.tileId === tileId))
         .filter((tile): tile is TilesetTileAsset => Boolean(tile)),
     [effectiveLevelTileIds, state.project.tiles],
   );
   const levelTerrainSets = useMemo(
     () =>
-      level
+      selectedNode
         ? state.project.terrainSets.filter(
             (terrainSet) =>
-              terrainSet.levelId === level.id ||
-              (!terrainSet.levelId && Object.values(terrainSet.slots).some((tileId) => effectiveLevelTileIds.includes(tileId))),
+              terrainSet.sceneNodeId === selectedNode.id ||
+              (!terrainSet.sceneNodeId && Object.values(terrainSet.slots).some((tileId) => effectiveLevelTileIds.includes(tileId))),
           )
         : [],
-    [effectiveLevelTileIds, level, state.project.terrainSets],
+    [effectiveLevelTileIds, selectedNode, state.project.terrainSets],
   );
   const terrainTileToSetId = useMemo(() => {
     const map = new Map<number, number>();
@@ -122,8 +127,10 @@ export function useAppShellController() {
   const levelEditor = useLevelEditor({
     state,
     dispatch,
-    level,
-    layer,
+    scene,
+    selectedNode,
+    tileMapData,
+    sceneTileMapData,
     selectedTerrainSet,
     selectedPaintTileId,
     setSelectedPaintTileId,
@@ -131,22 +138,24 @@ export function useAppShellController() {
     tilePalette,
     terrainTileToSetId,
     spaceHeld,
+    levelPan,
     setLevelPan,
   });
 
+  const tileMapNodeId = selectedNode?.data.type === "TileMap" ? selectedNode.id : null;
   const atlasEditor = useAtlasEditor({
     state,
     dispatch,
     selectedSourceImage,
     selectedSlices,
-    level,
+    tileMapSceneId: scene?.id ?? null,
+    tileMapNodeId,
     effectiveLevelTileIds,
     spaceHeld,
     setSlicerPan,
     setError,
   });
 
-  // Reset paint tile when the palette changes and the selected tile is no longer valid
   useEffect(() => {
     if (!tilePalette.length) {
       if (selectedPaintTileId !== 0) setSelectedPaintTileId(0);
@@ -158,7 +167,6 @@ export function useAppShellController() {
     }
   }, [selectedPaintTileId, tilePalette, state.project.animatedTiles]);
 
-  // Prevent browser pinch-to-zoom from intercepting Ctrl+wheel
   useEffect(() => {
     function onWheel(event: WheelEvent) {
       if (event.ctrlKey || event.metaKey) event.preventDefault();
@@ -167,7 +175,6 @@ export function useAppShellController() {
     return () => window.removeEventListener("wheel", onWheel);
   }, []);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const { handleCopy, handleCut, handlePaste } = levelEditor;
     const { atlasModule, atlasManualRects, atlasSelectedManualRectIndex, updateManualRect, setAtlasManualDraft, setSlicerCanvasTool } = atlasEditor;
@@ -180,9 +187,7 @@ export function useAppShellController() {
       ) {
         return;
       }
-      if (event.code === "Space") {
-        setSpaceHeld(true);
-      }
+      if (event.code === "Space") setSpaceHeld(true);
       if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "z") {
         event.preventDefault();
         dispatch({ type: "undo" });
@@ -204,6 +209,40 @@ export function useAppShellController() {
         if (event.key === "0") resetWorkspaceZoom();
       }
       if (state.editor.workspace === "level") {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "d") {
+          event.preventDefault();
+          const sel = state.editor.selectedNodeId;
+          const scn = state.project.scenes.find((s) => s.id === state.editor.selectedSceneId);
+          if (sel && scn && sel !== scn.root.id) {
+            dispatch({ type: "duplicateNode", sceneId: scn.id, nodeId: sel });
+          }
+          return;
+        }
+        if (event.key === "Delete" || event.key === "Backspace") {
+          const sel = state.editor.selectedNodeId;
+          const scn = state.project.scenes.find((s) => s.id === state.editor.selectedSceneId);
+          if (sel && scn && sel !== scn.root.id) {
+            event.preventDefault();
+            dispatch({ type: "removeNode", sceneId: scn.id, nodeId: sel });
+          }
+          return;
+        }
+        if ((event.ctrlKey || event.metaKey) && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+          const sel = state.editor.selectedNodeId;
+          const scn = state.project.scenes.find((s) => s.id === state.editor.selectedSceneId);
+          if (sel && scn && sel !== scn.root.id) {
+            const parent = findParent(scn.root, sel);
+            if (parent) {
+              const idx = parent.children.findIndex((c) => c.id === sel);
+              const toIndex = event.key === "ArrowUp" ? idx - 1 : idx + 1;
+              if (toIndex >= 0 && toIndex < parent.children.length) {
+                event.preventDefault();
+                dispatch({ type: "reorderNode", sceneId: scn.id, parentId: parent.id, nodeId: sel, toIndex });
+              }
+            }
+          }
+          return;
+        }
         if (event.key === "a") {
           event.preventDefault();
           setAssetTrayOpen((current) => !current);
@@ -230,8 +269,8 @@ export function useAppShellController() {
         if (event.key === "r") dispatch({ type: "setLevelTool", tool: "rect" });
         if (event.key === "g") dispatch({ type: "setLevelTool", tool: "bucket" });
         if (event.key === "h") dispatch({ type: "setLevelTool", tool: "hand" });
-        if (event.key === "c") dispatch({ type: "setLevelTool", tool: "collisionRect" });
-        if (event.key === "m") dispatch({ type: "setLevelTool", tool: event.shiftKey ? "markerRect" : "markerPoint" });
+        if (event.key === "o") dispatch({ type: "setLevelTool", tool: "objectPlace" });
+        if (event.key === "s" && !event.metaKey && !event.ctrlKey) dispatch({ type: "setLevelTool", tool: "objectSelect" });
         if (!event.metaKey && !event.ctrlKey && !event.altKey && /^[0-9]$/.test(event.key)) {
           const quickPalette = [selectedPaintTileId, ...pinnedTileIds, ...recentTileIds]
             .filter((tileId, index, list) => tileId && list.indexOf(tileId) === index)
@@ -312,9 +351,10 @@ export function useAppShellController() {
   function handleWheelZoom(event: ReactWheelEvent<HTMLDivElement>, workspace: "level" | "slicer") {
     event.preventDefault();
     const currentZoom = workspace === "level" ? state.editor.levelZoom : state.editor.slicerZoom;
-    if (!(event.metaKey || event.ctrlKey) && event.deltaMode === 0 && Math.abs(event.deltaX) < 1) {
-      const dx = event.shiftKey ? -event.deltaY : 0;
-      const dy = event.shiftKey ? 0 : -event.deltaY;
+    const isTrackpadPan = !(event.metaKey || event.ctrlKey) && event.deltaMode === 0 && Math.abs(event.deltaX) > 2;
+    if (isTrackpadPan) {
+      const dx = -event.deltaX;
+      const dy = -event.deltaY;
       if (workspace === "level") {
         setLevelPan((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
       } else {
@@ -322,7 +362,8 @@ export function useAppShellController() {
       }
       return;
     }
-    const nextZoom = clamp(currentZoom * Math.exp(-event.deltaY * 0.0025), workspace === "level" ? 0.5 : 0.25, 8);
+    const zoomSensitivity = event.deltaMode === 0 ? 0.002 : 0.05;
+    const nextZoom = clamp(currentZoom * Math.exp(-event.deltaY * zoomSensitivity), workspace === "level" ? 0.25 : 0.25, 16);
     const bounds = event.currentTarget.getBoundingClientRect();
     const style = window.getComputedStyle(event.currentTarget);
     const paddingLeft = parseFloat(style.paddingLeft) || 0;
@@ -439,26 +480,14 @@ export function useAppShellController() {
     const packedAtlas = await buildAtlasFromProject(state.project);
     if (!packedAtlas) return;
     try {
-      await saveBlobWithPicker(
-        new Blob([new Uint8Array(packedAtlas.atlasBin)], { type: "application/octet-stream" }),
-        "atlas.bin",
-        "Atlas Binary",
-        { "application/octet-stream": [".bin"] },
-      );
-      await saveBlobWithPicker(
-        new Blob([new Uint8Array(packedAtlas.atlasMetaBin)], { type: "application/octet-stream" }),
-        "atlas.meta.bin",
-        "Atlas Metadata",
-        { "application/octet-stream": [".bin"] },
-      );
+      const files: OutputFile[] = [
+        { blob: new Blob([new Uint8Array(packedAtlas.atlasBin)], { type: "application/octet-stream" }), fileName: "atlas.bin" },
+        { blob: new Blob([new Uint8Array(packedAtlas.atlasMetaBin)], { type: "application/octet-stream" }), fileName: "atlas.meta.bin" },
+      ];
       if (state.project.atlasSettings.includeDebugJson) {
-        await saveBlobWithPicker(
-          new Blob([packedAtlas.atlasDebugJson], { type: "application/json" }),
-          "atlas.debug.json",
-          "Atlas Debug JSON",
-          { "application/json": [".json"] },
-        );
+        files.push({ blob: new Blob([packedAtlas.atlasDebugJson], { type: "application/json" }), fileName: "atlas.debug.json" });
       }
+      await saveFilesToDirectory(files);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setError(error instanceof Error ? error.message : "Failed to export atlas.");
@@ -466,28 +495,20 @@ export function useAppShellController() {
   }
 
   async function exportLevel() {
-    if (!level) return;
+    if (!scene) return;
     try {
-      const bytes = await exportTilemapBin(state.project, level);
-      await saveBlobWithPicker(
-        new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" }),
-        `${level.name}.tmap.bin`,
-        "Tilemap Binary",
-        { "application/octet-stream": [".bin"] },
-      );
-      await saveBlobWithPicker(
-        new Blob([await exportLevelDebugJson(state.project, level)], { type: "application/json" }),
-        `${level.name}.debug.json`,
-        "Level Debug JSON",
-        { "application/json": [".json"] },
-      );
+      const bytes = await exportSceneBin(state.project, scene);
+      const debugJson = await exportSceneDebugJson(state.project, scene);
+      await saveFilesToDirectory([
+        { blob: new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" }), fileName: `${scene.name}.pscn.bin` },
+        { blob: new Blob([debugJson], { type: "application/json" }), fileName: `${scene.name}.debug.json` },
+      ]);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      setError(error instanceof Error ? error.message : "Failed to export level.");
+      setError(error instanceof Error ? error.message : "Failed to export scene.");
     }
   }
 
-  // --- Animation ---
   function createAnimation() {
     const id = state.project.idCounters.spriteAnimation;
     const name = `anim_${String(id).padStart(2, "0")}`;
@@ -510,8 +531,10 @@ export function useAppShellController() {
   return {
     state,
     dispatch,
-    level,
-    layer,
+    scene,
+    selectedNode,
+    tileMapData,
+    sceneTileMapData,
     selectedTerrainSet,
     selectedSourceImage,
     atlasSprites,
@@ -530,30 +553,23 @@ export function useAppShellController() {
     pinnedTileIds,
     levelPan,
     slicerPan,
-    // Level editor
     ...levelEditor,
-    // Atlas editor
     ...atlasEditor,
-    // Shared pan/zoom
     handleWheelZoom,
     handlePanStart,
     handlePanMove,
     handlePanEnd,
-    // File I/O
     importImages,
     loadProject,
     saveProject,
     exportAtlas,
     exportLevel,
-    // Tile helpers
     pushRecentTile,
     pushRecentTerrainSet,
     togglePinnedTile,
     pinTileRegion,
-    // Factory helpers (passed through to V2 shell)
     createExampleProject,
-    createLevelLayer,
-    // Animation
+    createNode,
     createAnimation,
     handleAnimationTick,
   };

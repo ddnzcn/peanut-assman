@@ -1,5 +1,5 @@
 import { getTileAt } from "./level/editor";
-import type { LevelDocument, LevelLayer, TerrainSet } from "./types";
+import type { TileMapNodeData, TerrainSet } from "./types";
 
 export function calculateBlob47Mask(
   n: boolean,
@@ -56,18 +56,17 @@ export function buildTerrainTileToSetMap(terrainSets: TerrainSet[]) {
 }
 
 export function getSubtileVariantTileIds(
-  level: LevelDocument,
-  layer: LevelLayer,
+  tileMap: TileMapNodeData,
   tileX: number,
   tileY: number,
   terrainSet: TerrainSet,
   terrainTileToSet: Map<number, TerrainSet>,
 ) {
   const isTerrainAt = (x: number, y: number) => {
-    if (x < 0 || y < 0 || x >= layer.widthTiles || y >= layer.heightTiles) {
+    if (x < 0 || y < 0 || x >= tileMap.mapWidthTiles || y >= tileMap.mapHeightTiles) {
       return false;
     }
-    const tileId = getTileAt(level, layer, x, y).tileId;
+    const tileId = getTileAt(tileMap, x, y).tileId;
     return terrainTileToSet.get(tileId)?.id === terrainSet.id;
   };
 

@@ -1,15 +1,15 @@
-import { DEFAULT_ATLAS_OPTIONS, createDefaultIdCounters, createLevelLayer } from "./project";
-import { chunkKey, fnv1a32 } from "../utils";
+import { DEFAULT_ATLAS_OPTIONS, createDefaultIdCounters } from "./project";
+import { tileMapChunkKey, fnv1a32 } from "../utils";
+import { createNode } from "../scene/helpers";
 import type {
-  CollisionObject,
-  LevelDocument,
-  MarkerObject,
   ProjectDocument,
+  SceneDocument,
   SliceAsset,
   SourceImageAsset,
   SpriteAsset,
-  TileCell,
-  TileChunk,
+  TileMapCell,
+  TileMapChunk,
+  TileMapNodeData,
   TerrainSet,
   TilesetAsset,
   TilesetTileAsset,
@@ -28,8 +28,8 @@ export function createExampleProject(): ProjectDocument {
   const sprites = createExampleSprites(slices);
   const tiles = createExampleTilesetTiles(slices, sprites);
   const tileset = createExampleTileset(tiles, sprites);
-  const level = createExampleLevel(tileset.id, tiles);
-  const terrainSet = createExampleTerrainSet(tileset.id, level.id, tiles);
+  const scene = createExampleScene(tileset.id, tiles);
+  const terrainSet = createExampleTerrainSet(tileset.id, tiles);
 
   return {
     version: 1,
@@ -40,7 +40,7 @@ export function createExampleProject(): ProjectDocument {
     tiles,
     tilesets: [tileset],
     terrainSets: [terrainSet],
-    levels: [level],
+    scenes: [scene],
     spriteAnimations: [],
     animatedTiles: [],
     atlasSettings: DEFAULT_ATLAS_OPTIONS,
@@ -51,10 +51,8 @@ export function createExampleProject(): ProjectDocument {
       sprite: sprites.length + 1,
       tileset: 2,
       tile: tiles.length + 1,
-      level: 2,
-      layer: 4,
-      collision: 3,
-      marker: 3,
+      scene: 2,
+      node: 10,
       terrainSet: 2,
     },
   };
@@ -67,9 +65,7 @@ function createExampleSourceImage(): SourceImageAsset {
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d");
-  if (!context) {
-    throw new Error("Unable to create example source image.");
-  }
+  if (!context) throw new Error("Unable to create example source image.");
 
   context.fillStyle = "#16212d";
   context.fillRect(0, 0, width, height);
@@ -126,10 +122,7 @@ function createExampleSprites(slices: SliceAsset[]): SpriteAsset[] {
   });
 }
 
-function createExampleTilesetTiles(
-  slices: SliceAsset[],
-  sprites: SpriteAsset[],
-): TilesetTileAsset[] {
+function createExampleTilesetTiles(slices: SliceAsset[], sprites: SpriteAsset[]): TilesetTileAsset[] {
   return slices.map((slice, index) => ({
     tileId: index + 1,
     sliceId: slice.id,
@@ -138,10 +131,7 @@ function createExampleTilesetTiles(
   }));
 }
 
-function createExampleTileset(
-  tiles: TilesetTileAsset[],
-  sprites: SpriteAsset[],
-): TilesetAsset {
+function createExampleTileset(tiles: TilesetTileAsset[], sprites: SpriteAsset[]): TilesetAsset {
   return {
     id: 1,
     name: "terrain_tiles",
@@ -157,103 +147,51 @@ function createExampleTileset(
   };
 }
 
-function createExampleLevel(tilesetId: number, tiles: TilesetTileAsset[]): LevelDocument {
-  const groundLayer = createLevelLayer("layer-1", "Ground", MAP_WIDTH_TILES, MAP_HEIGHT_TILES, { hasTiles: true });
-  const gameplayLayer = createLevelLayer("layer-2", "Gameplay", MAP_WIDTH_TILES, MAP_HEIGHT_TILES, {
-    hasCollision: true,
-    hasMarkers: true,
-  });
-  const foregroundLayer = createLevelLayer("layer-3", "Foreground", MAP_WIDTH_TILES, MAP_HEIGHT_TILES, { hasTiles: true });
+function createExampleScene(tilesetId: number, tiles: TilesetTileAsset[]): SceneDocument {
+  const root = createNode("Root", "Root", "node-scene-1-0");
 
-  const chunks: Record<string, TileChunk> = {};
-  const groundChunk = createChunk("layer-1", 0, 0, createPatternTiles());
-  chunks[chunkKey("layer-1", 0, 0)] = groundChunk;
-
-  const collisions: CollisionObject[] = [
-    {
-      id: 1,
-      layerId: "layer-2",
-      type: "Solid",
-      flags: 4,
-      x: 48,
-      y: 192,
-      w: 160,
-      h: 32,
-      userData0: 0,
-      userData1: 0,
-    },
-    {
-      id: 2,
-      layerId: "layer-2",
-      type: "OneWay",
-      flags: 4,
-      x: 208,
-      y: 128,
-      w: 96,
-      h: 16,
-      userData0: 1,
-      userData1: 0,
-    },
-  ];
-
-  const markers: MarkerObject[] = [
-    {
-      id: 1,
-      layerId: "layer-2",
-      shape: "Point",
-      flags: 0,
-      x: 64,
-      y: 160,
-      w: 0,
-      h: 0,
-      type: "player_spawn",
-      event: "spawn_intro",
-      name: "spawn_main",
-      userData0: 0,
-      userData1: 0,
-      properties: {
-        facing: "right",
-      },
-    },
-    {
-      id: 2,
-      layerId: "layer-2",
-      shape: "Rect",
-      flags: 0,
-      x: 224,
-      y: 96,
-      w: 64,
-      h: 64,
-      type: "camera_zone",
-      event: "intro_pan",
-      name: "camera_intro",
-      userData0: 0,
-      userData1: 1,
-      properties: {
-        target: "boss_room",
-      },
-    },
-  ];
-
-  return {
-    id: "level-1",
-    name: "example_level",
-    mapWidthTiles: MAP_WIDTH_TILES,
-    mapHeightTiles: MAP_HEIGHT_TILES,
+  const tileMapNode = createNode("TileMap", "TileMap", "node-scene-1-1");
+  const tileMapData: TileMapNodeData = {
+    type: "TileMap",
     tileWidth: TILE_WIDTH,
     tileHeight: TILE_HEIGHT,
     chunkWidthTiles: CHUNK_WIDTH_TILES,
     chunkHeightTiles: CHUNK_HEIGHT_TILES,
-    tileIds: tiles.map((tile) => tile.tileId),
+    mapWidthTiles: MAP_WIDTH_TILES,
+    mapHeightTiles: MAP_HEIGHT_TILES,
+    projection: "orthogonal",
+    staggerAxis: "y",
+    staggerIndex: "odd",
+    tileIds: tiles.map((t) => t.tileId),
     tilesetIds: [tilesetId],
-    layers: [groundLayer, gameplayLayer, foregroundLayer],
-    chunks,
-    collisions,
-    markers,
+    chunks: {
+      [tileMapChunkKey(0, 0)]: createChunk(0, 0, createPatternTiles()),
+    },
   };
+  tileMapNode.data = tileMapData;
+
+  const collisionNode = createNode("CollisionShape", "Ground Collision", "node-scene-1-2");
+  collisionNode.transform = { x: 48, y: 192, rotation: 0, scaleX: 1, scaleY: 1 };
+  if (collisionNode.data.type === "CollisionShape") {
+    collisionNode.data.width = 160;
+    collisionNode.data.height = 32;
+  }
+
+  const spawnNode = createNode("Area", "Player Spawn", "node-scene-1-3");
+  spawnNode.transform = { x: 64, y: 160, rotation: 0, scaleX: 1, scaleY: 1 };
+  if (spawnNode.data.type === "Area") {
+    spawnNode.data.shape = "point";
+    spawnNode.data.areaTag = "player_spawn";
+  }
+  spawnNode.scriptId = "spawn_intro";
+  spawnNode.scriptData = { facing: "right" };
+
+  root.children = [tileMapNode, collisionNode, spawnNode];
+
+  return { id: "scene-1", name: "example_scene", root };
 }
 
-function createExampleTerrainSet(tilesetId: number, levelId: string, tiles: TilesetTileAsset[]): TerrainSet {
+function createExampleTerrainSet(tilesetId: number, tiles: TilesetTileAsset[]): TerrainSet {
   const slots: Record<number, number> = {};
   for (let i = 0; i < 16; i++) {
     slots[i] = tiles[0]?.tileId ?? 0;
@@ -262,23 +200,14 @@ function createExampleTerrainSet(tilesetId: number, levelId: string, tiles: Tile
     id: 1,
     name: "terrain_basic",
     tilesetId,
-    levelId,
     slots,
     mode: "cardinal",
   };
 }
 
-function createChunk(
-  layerId: string,
-  chunkX: number,
-  chunkY: number,
-  tileIds: number[],
-): TileChunk {
-  const tiles: TileCell[] = tileIds.map((tileId) => ({
-    tileId,
-    flags: 0,
-  }));
-  return { layerId, chunkX, chunkY, tiles };
+function createChunk(chunkX: number, chunkY: number, tileIds: number[]): TileMapChunk {
+  const tiles: TileMapCell[] = tileIds.map((tileId) => ({ tileId, flags: 0 }));
+  return { chunkX, chunkY, tiles };
 }
 
 function createPatternTiles(): number[] {
